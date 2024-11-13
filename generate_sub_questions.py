@@ -112,15 +112,18 @@ def main(args):
     df = pd.read_json(args.input_path, lines=True)
 
     # Add empty column if we don't have already
-    if 'qg-output' not in df.columns:
-        df["qg-output"] = ""
+    #Filipe 11/11
+    #if 'qg-output' not in df.columns:
+        #df["qg-output"] = ""
+    df["qg-output"] = ""
     start = 0 if not args.start else args.start
     end = len(df) if not args.end else args.end
 
     for i in tqdm(range(start, end)):
-        if not df.iloc[i]['qg-output'] == "":
-            print(f"question already generated at location {i}")
-            continue
+        #Filipe 11/11
+        #if not df.iloc[i]['qg-output'] == "":
+            #print(f"question already generated at location {i}")
+            #continue
         try:
             context = construct_context(
                 df.iloc[i]['person'], df.iloc[i]['venue'], df.iloc[i]['claim'])
