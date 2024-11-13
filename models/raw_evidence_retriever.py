@@ -45,10 +45,11 @@ class WebRetriever:
     def __init__(self, engine: str, sites_constrain=True, answer_count: int = 10):
         self.engine = engine
         if engine == 'bing':
-            self.subscription_key = os.environ[
-                'BING_SEARCH_V7_SUBSCRIPTION_KEY']
+            #self.subscription_key = os.environ[
+                #'BING_SEARCH_V7_SUBSCRIPTION_KEY']
             self.subscription_key = "4eb55afbffd34ae9943c95a15da944b0"
-            self.endpoint = os.environ['BING_SEARCH_V7_ENDPOINT']
+            #self.endpoint = os.environ['BING_SEARCH_V7_ENDPOINT']
+            self.endpoint = "https://api.bing.microsoft.com/v7.0/search"
             self.mkt = 'en-US'
             self.answer_count = answer_count
             self.headers = {'Ocp-Apim-Subscription-Key': self.subscription_key}
@@ -95,8 +96,10 @@ class WebRetriever:
                 return PLACE_HOLDER
             retrieved_pages = response_json['webPages']['value']
             count = 0
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(10)
+            #Filipe 11/13
+            #signal.signal(signal.SIGALRM, timeout_handler)
+            #signal.alarm(10)
+            
             for i, page in enumerate(retrieved_pages):
                 page_info_entry = {
                     'page_name': None,

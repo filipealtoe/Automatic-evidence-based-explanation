@@ -1,3 +1,4 @@
+import os
 import re
 import argparse
 import pandas as pd
@@ -139,19 +140,28 @@ def main(args):
     )
     start = args.start
     end = min(len(df), args.end)
-    chunks = [df[i:i + args.chunk_size] for i in range(start, end, args.chunk_size)]
-    with Pool() as pool:
-        process_arg = [(chunk, idx, web_retriever, args) for idx, chunk in enumerate(chunks)]
-        results = pool.starmap(process_chunk, process_arg)
+
+    #Filipe 11/13
+    #chunks = [df[i:i + args.chunk_size] for i in range(start, end, args.chunk_size)]
+    #with Pool() as pool:
+        #process_arg = [(chunk, idx, web_retriever, args) for idx, chunk in enumerate(chunks)]
+        #results = pool.starmap(process_chunk, process_arg)
+
+    chunks = df
+    results = process_chunk(chunks, len(chunks.index), web_retriever, args)
+    
+    #  
     # Separate the results into two lists
     # Merge the results back into a single DataFrame
-    df_processed = pd.concat([r for r in results if r is not None])
-    for i, row in df_processed.iterrows():
+    #df_processed = pd.concat([r for r in results if r is not None])
+    #end Filipe
+    for i, row in results.iterrows():#df_processed.iterrows():
         if args.use_time_stamp and not row['search_results_timestamp']:
             print(f"error happens at row {i} when searching with timestamp")
         if not args.use_time_stamp and not row['search_results_timestamp']:
             print(f"error happens at row {i} when searching")
-    df_processed.to_json(args.output_path, orient='records', lines=True)
+    #df_processed.to_json(args.output_path, orient='records', lines=True)
+    results.to_json(args.output_path, orient='records', lines=True)
 
 
 if __name__ == '__main__':
