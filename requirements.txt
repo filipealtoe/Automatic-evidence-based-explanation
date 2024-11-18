@@ -3,3 +3,4 @@ pandas==1.5.2
 torch==1.13.1
 transformers==4.24.0
 htmldate==1.4.1
+html2text
