@@ -10,10 +10,10 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 WH_MATCHES = ("why", "who", "which", "what", "where", "when", "how")
 
-NUMBERS = ("1.", "2.", "3.", "4.", "5.", "6.", "7.", "8.", "9.")
+NUMBERS = ("1.", "2.", "3.", "4.", "5.", "6.", "7.", "8.", "9.", "10.")
 
 # OpenAI Engine, feel free to change
-ENGINE = 'text-davinci-003'
+ENGINE = 'gpt-4o'
 # The stop criteria for question generation, feel free to change
 MAX_GPT_CALLS = 5
 MAX_NUM_QUESTIONS = 10
@@ -86,7 +86,7 @@ Justification: Verifies if emission reductions are genuine or result from shifti
         if len(q) != 0:
             # Check if it is a justification line
             try:
-                q = q.split("Justification:")[1]
+                q = q.split("Justification: ")[1]
                 is_justification = True
             except:
                 is_justification = False
@@ -95,9 +95,12 @@ Justification: Verifies if emission reductions are genuine or result from shifti
             # Remove question number if there are any
             if q.lower().startswith(NUMBERS):
                 q = q[3:]
+                if q[0]==" ":
+                    q = q[1:]
 
             # Do not add question or justifications that has wh-word or is duplicate
-            if not q.isspace() and not any(x in q.lower() for x in WH_MATCHES):
+            #if not q.isspace() and not any(x in q.lower() for x in WH_MATCHES):
+            if not q.isspace():
                 for q_alreay_in in questions:
                     # Duplicate if exact string match
                     if q == q_alreay_in:
