@@ -73,6 +73,7 @@ def update_results(
 
 
 def process_chunk(chunk, chunk_idx, retriever, args):
+    chunk['decomposed_search_hits'] = ""
     try:
         for i, row in tqdm(chunk.iterrows()):
             # skip if the row has already been processed with time constraint
@@ -93,25 +94,33 @@ def process_chunk(chunk, chunk_idx, retriever, args):
                 claim = f"{row['person']} {row['venue']} {row['claim']}"
                 questions = [claim]
             else:
-                questions = row['qg-output']
+                questions = row['claim questions']
             questions = [q for q in questions if q.strip()]
             all_urls = set()
             all_entity_names = set()
+            all_results = []
             results = {
                 'entities_info': [],
                 'pages_info': []
             }
+            justification_index = 0
             for q in questions[:args.question_num]:
+                results['decomposed_question'] = q
+                results['decomposed_justification'] = row['justifications'][justification_index]
+                justification_index = justification_index + 1
                 if args.use_time_stamp:
                     res = retriever.get_results(q, timestamp)
                 else:
                     res = retriever.get_results(q)
-                update_results(results, res, all_urls, all_entity_names)
-            if not args.use_time_stamp:
-                chunk.at[i, 'search_results'] = results
-            else:
-                chunk.at[i, 'search_results_timestamp'] = results
-            print(len(results['entities_info']), len(results['pages_info']))
+                results['pages_info'] = res['pages_info']
+                #update_results(results, res, all_urls, all_entity_names)
+            #if not args.use_time_stamp:
+                #chunk.at[i, 'search_results'] = results
+            #else:
+                #chunk.at[i, 'search_results_timestamp'] = results
+                all_results.append(results)
+            #print(len(results['entities_info']), len(results['pages_info']))
+            chunk.at[i, 'decomposed_search_hits'] = all_results
 
     except Exception as e:
         print('error:', e)
