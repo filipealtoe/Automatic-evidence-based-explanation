@@ -118,7 +118,7 @@ def process_chunk(chunk, chunk_idx, retriever, args):
                 #chunk.at[i, 'search_results'] = results
             #else:
                 #chunk.at[i, 'search_results_timestamp'] = results
-                all_results.append(results)
+                all_results.append(results.copy())
             #print(len(results['entities_info']), len(results['pages_info']))
             chunk.at[i, 'decomposed_search_hits'] = all_results
 
