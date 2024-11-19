@@ -1,4 +1,4 @@
-openai==0.27.0
+openai==0.28
 pandas==1.5.2
 torch==1.13.1
 transformers==4.24.0
