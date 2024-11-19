@@ -44,10 +44,20 @@ def decompose_claim(claim, questions, justifications, simulate_LLM=1):
     showcase_examples = construct_static_examples()
     prompt = construct_prompt(showcase_examples, claim)
     if not simulate_LLM:
-        res = openai.Completion.create(engine=ENGINE, prompt=prompt,
-                                    temperature=0.7, max_tokens=1024,
-                                    stop=["Claim"])
-        res = res['choices'][0]["text"].strip()
+        #Filipe 11/19
+        #res = openai.Completion.create(engine=ENGINE, prompt=prompt,
+                                    #temperature=0.7, max_tokens=1024,
+                                    #stop=["Claim"])
+        #res = res['choices'][0]["text"].strip()
+
+        res = openai.ChatCompletion.create(
+                model=ENGINE,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                max_tokens=1024
+            )
+        res = res['choices'][0]['message']['content'].strip()
+
     else:
         res = '''1. Has the US reduced its total carbon emissions over the last decade?
 Justification: Establishes if emissions are actually decreasing in the US.
@@ -135,15 +145,15 @@ def main(args):
             #context = construct_context(
                 #df.iloc[i]['person'], df.iloc[i]['venue'], df.iloc[i]['claim'])
             claim = df.iloc[i]['claim']
-            gpt3_called = 0
+            llm_called = 0
             questions = []
             justifications = []
             while (len(questions) < MAX_NUM_QUESTIONS
-                   and gpt3_called < MAX_GPT_CALLS):
+                   and llm_called < MAX_GPT_CALLS):
                 questions, justifications = decompose_claim(
                     claim, questions, justifications, args.simulate_llm
                 )
-                gpt3_called += 1
+                llm_called += 1
 
             df.at[i, 'claim questions'] = questions
             df.at[i, 'justifications'] = justifications
