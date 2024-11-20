@@ -16,7 +16,6 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 ENGINE = 'gpt-4o'
 # The stop criteria for question generation, feel free to change
 MAX_GPT_RETRIES = 5
-MAX_NUM_QUESTIONS = 10
 
 # Configure logging
 logging.basicConfig(
@@ -25,7 +24,21 @@ logging.basicConfig(
     handlers=[logging.FileHandler("file_management.log"), logging.StreamHandler()]
 )
 
-# Format example for static prompt
+def construc_intermediate_prompt(part_number, total_parts=None, context_text=""):
+    #According to https://medium.com/@josediazmoreno/break-the-limits-send-large-text-blocks-to-chatgpt-with-ease-6824b86d3270
+    if part_number == 0:
+        prompt = '''The total length of the content that I want to send you is too large to send in only one piece. 
+        For sending the content, I will follow this rule: [START PART 1/''' + str(total_parts) + "] content [END PART 1/" + str(total_parts) + "]. You just answer: Received part 1/" + str(total_parts) + ''']. When I tell you "ALL PARTS SENT", you merge all parts and answer: "Parts concatenated".'''
+
+    elif part_number == total_parts + 1:
+        prompt = '''ALL PARTS SENT. '''
+
+    else:
+        prompt = '''Do not answer yet. This is just another part of the text I want to send you. Just receive, acknowledge as Part Received and wait for instructions.''' + "[START PART " + str(part_number) + "/" + str(total_parts) + "]" + context_text + "[END PART " + str(part_number) + "/" + str(total_parts) + "]"
+
+        #prompt.format(str(part_number),str(total_parts),context_text,str(part_number),str(total_parts))
+    return prompt
+
 def construct_static_examples():
     showcase_examples = '''Hypothesis: "{}" The attached file is a scraped web page that may or may not provide evidence to the hypothesis. Summarize this text including only the passages that are relevant to confirm or deny the hypothesis. Output only the summary '''
     return showcase_examples
@@ -137,38 +150,50 @@ def LLM_delete_uploaded_file(file_id):
         logging.error(f"Failed to delete file with ID '{file_id}'.")
     return deleted
 
+def LLM_send_prompt(prompt):
+    try:
+        #prompt = "Context Part " + str(iteration) + ": \"" + scraped_text_chunk + ".\" Respond with Received." 
+        res = openai.ChatCompletion.create(
+            model=ENGINE,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=1024
+        )
+        res = res['choices'][0]['message']['content'].strip()
+        if ENGINE == "gpt-4o":
+            delay = 20
+        else: delay = 2
+        time.sleep(delay)
+    except Exception as e:
+                logging.error(f"Context Passing partial prompt failed: {e}")
+    return res
+
 def summarize_justification(decomposed_justification, scraped_text_file_path, scraped_text_chunks):
     if scraped_text_chunks != None:
-        iteration = 1
+        #iteration = 1
+        part_number = 0
         for scraped_text_chunk in scraped_text_chunks:
-            try:
-                prompt = "Context Part " + str(iteration) + ": \"" + scraped_text_chunk + ".\" Respond with Received." 
-                res = openai.ChatCompletion.create(
-                    model=ENGINE,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.7,
-                    max_tokens=1024
-                )
-                res = res['choices'][0]['message']['content'].strip()
-                if ENGINE == "gpt-4o":
-                    delay = 20
-                else: delay = 2
-                time.sleep(delay)
-            except Exception as e:
-                logging.error(f"Context Passing partial prompt failed: {e}")
-            iteration = iteration + 1
+            #If first iteration, send instructions on how to handle partioned context
+            if part_number == 0:
+                prompt = construc_intermediate_prompt(part_number, len(scraped_text_chunks))
+                response = LLM_send_prompt(prompt)
+                part_number = part_number + 1
+                prompt = construc_intermediate_prompt(part_number, len(scraped_text_chunks), scraped_text_chunk)
+                response = LLM_send_prompt(prompt)
+                part_number = part_number + 1
+            else:
+                prompt = construc_intermediate_prompt(part_number, len(scraped_text_chunks), scraped_text_chunk)
+                response = LLM_send_prompt(prompt)
+                part_number = part_number + 1
+            
+
+            #iteration = iteration + 1
+        Completion_prompt = construc_intermediate_prompt(part_number, len(scraped_text_chunks))
+        #response = LLM_send_prompt(prompt)
         static_prompt = construct_static_prompt()
         prompt = construct_prompt(static_prompt, decomposed_justification)
-        try:
-            res = openai.ChatCompletion.create(
-                    model=ENGINE,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.7,
-                    max_tokens=1024
-                )
-            response = res['choices'][0]['message']['content'].strip()
-        except Exception as e:
-                logging.error(f"Summarization prompt failed: {e}")
+        prompt = Completion_prompt + prompt
+        response = LLM_send_prompt(prompt)
     #If uses fine tunning
     else:
         showcase_examples = construct_static_examples()
