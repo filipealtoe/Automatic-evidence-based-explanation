@@ -3,6 +3,8 @@ import time
 import signal
 import requests
 from htmldate import find_date
+import logging
+from bs4 import BeautifulSoup
 
 excluded_sites = ["politifact.com",
                   "factcheck.org",
@@ -39,6 +41,32 @@ def timeout_handler(num, stack):
     print("received sigalrm")
     raise Exception("Time out!")
 
+def scrape_website_text(url):
+        logging.info(f"Starting to scrape URL: {url}")
+        try:
+            # Fetch the content of the webpage
+            response = requests.get(url)
+            response.raise_for_status()  # Raise HTTPError for bad responses
+            logging.info("Page fetched successfully.")
+
+            # Parse the HTML content using BeautifulSoup
+            soup = BeautifulSoup(response.content, 'html.parser')
+            logging.debug("HTML content parsed with BeautifulSoup.")
+
+            # Extract and concatenate visible text from the HTML elements
+            text = ' '.join(element.get_text(strip=True) for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'li', 'span', 'div']))
+            logging.info(f"Successfully scraped text from URL: {url}")
+
+            return text
+
+        except requests.RequestException as e:
+            logging.error(f"An error occurred while fetching the URL: {e}")
+            return ""
+
+        except Exception as e:
+            logging.error(f"An unexpected error occurred: {e}")
+            return ""
+
 
 class WebRetriever:
 
@@ -57,7 +85,15 @@ class WebRetriever:
         elif engine == 'google':
             pass
 
-    def get_results(self, query: str, time_stamp=None, raw_count=20):
+    logging.basicConfig(
+    level=logging.INFO,                     # Set logging level to INFO or DEBUG
+    format='%(asctime)s - %(levelname)s - %(message)s', 
+    handlers=[logging.FileHandler("web_scraper.log"),   # Log to a file
+              logging.StreamHandler()]                  # Print logs to the console
+)
+
+
+    def get_results(self, query: str, time_stamp=None, raw_count=30):
         if self.engine == 'bing':
             params = {
                 'q': query,
@@ -105,12 +141,14 @@ class WebRetriever:
                     'page_name': None,
                     'page_url': None,
                     'page_timestamp': None,
-                    'page_snippet': None
+                    'page_snippet': None,
+                    'page_content': None
                 }
                 if not self.site_constraint or not self.url_is_excluded(page['url']):
                     page_info_entry['page_name'] = page['name']
                     page_info_entry['page_url'] = page['url']
                     page_info_entry['page_snippet'] = page['snippet']
+                    
 
                     try:
                         # print("getting page timestamp:", page['url'])
@@ -120,7 +158,10 @@ class WebRetriever:
                     except Exception as ex:
                         print('Error happens during extracting page timestamp:')
                         print(ex)
-                    # assert page_info_entry['page_url'] is not None
+                    
+                    page_info_entry['page_content'] = scrape_website_text(page['url'])
+                    if page_info_entry['page_content'] == "":
+                        continue
                     pages_info.append(page_info_entry)
                     count += 1
                     if count == self.answer_count:
