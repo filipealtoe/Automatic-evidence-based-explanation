@@ -7,3 +7,4 @@ html2text
 requests
 beautifulsoup4
 langchain-community==0.3.7
+langchain-openai==0.2.9
