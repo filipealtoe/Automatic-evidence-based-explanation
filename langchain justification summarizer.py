@@ -4,6 +4,7 @@ import re
 import openai
 import logging
 import time
+from collections import deque
 import json
 import pandas as pd
 from tqdm import tqdm
@@ -12,6 +13,8 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 #from langchain_openai import OpenAI
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
+from langchain_core.callbacks import CallbackManager
+from langchain.callbacks import OpenAICallbackHandler
 
 # OpenAI API Key
 #openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -22,6 +25,15 @@ api_key = os.getenv("OPENAI_API_KEY")
 ENGINE = 'gpt-4o-mini'
 # Max number of LLM retries
 MAX_GPT_CALLS = 5
+
+if ENGINE == 'gpt-4o-mini':
+    max_tokens_min = 200000
+else:
+    max_tokens_min = 30000
+
+TOKEN_THRESHOLD = int(0.75 * max_tokens_min)
+INTERVAL_SECONDS = 45  # Time interval to monitor
+DELAY_SECONDS = 60 #Delay if token_threshold is reached
 
 # Configure logging
 logging.basicConfig(
@@ -64,9 +76,8 @@ def construct_mapreduce_prompt(decomposed_justification):
     prompt['combine_prompt'] = combine_prompt_template
     return prompt
 
-def summarize_justification(decomposed_justification, scraped_text, max_prompt_tokens = 4000):
+def summarize_justification(llm, decomposed_justification, scraped_text, max_prompt_tokens = 4000):
     #Temperature = 0 as we want the summary to be factual and based on the input text
-    llm = ChatOpenAI(temperature = 0, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
     num_tokens = llm.get_num_tokens(scraped_text)
     #If scraped text is smaller than a single prompt chunk, just run the simple prompt
     if num_tokens <= max_prompt_tokens:
@@ -81,9 +92,9 @@ def summarize_justification(decomposed_justification, scraped_text, max_prompt_t
                                      chain_type='map_reduce',
                                      map_prompt=prompt['map_prompt'],
                                      combine_prompt=prompt['combine_prompt'],
-                                     verbose=True
+                                     #verbose=True
                                     )
-        response = summary_chain.run(docs)
+        response = summary_chain.invoke(docs)
     return response
 
 
@@ -92,15 +103,40 @@ def main(args):
     start = 0 if not args.start else args.start
     end = len(df) if not args.end else args.end
 
+    #This is to monitor the llm tokens per minute to avoid errors
+    callback_handler = OpenAICallbackHandler()
+    callback_manager = CallbackManager([callback_handler])
+
+    llm = ChatOpenAI(temperature = 0, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS, callback_manager=callback_manager)
+
+    usage_log = deque()
+
     for i in tqdm(range(start, end)):
         try:
             decomposed_search_hits = df.iloc[i]['decomposed_search_hits']
             for decomposed_search_hit in decomposed_search_hits:
                 decomposed_justification = decomposed_search_hit['decomposed_justification']
                 i = 0
+                start_time = time.time()
                 #Summarize each url page content
                 for page_info in decomposed_search_hit['pages_info']:
-                    page_info['justification_summary'] = summarize_justification(decomposed_justification, page_info['page_content'])            
+                    page_info['justification_summary'] = summarize_justification(llm, decomposed_justification, page_info['page_content']) 
+                    # Access token usage information
+                    tokens_used = callback_handler.total_tokens
+                    # Log the token usage with a timestamp
+                    usage_log.append((start_time, tokens_used))
+                    # Remove outdated entries from the log (older than the interval)
+                    while usage_log and (time.time() - usage_log[0][0]) > INTERVAL_SECONDS:
+                        usage_log.popleft()
+                    # Calculate token usage in the last INTERVAL_SECONDS
+                    tokens_in_interval = sum(tokens for timestamp, tokens in usage_log)
+                    print(f"Tokens used in summarization: {tokens_used}")
+                    print(f"Tokens in interval: {tokens_in_interval}")
+                    if tokens_in_interval  > TOKEN_THRESHOLD:
+                        print(f"Token usage exceeded {TOKEN_THRESHOLD} tokens. Pausing for {DELAY_SECONDS} seconds...")
+                        time.sleep(DELAY_SECONDS)    
+                        callback_handler.total_tokens = 0   
+                        start_time = time.time()    
                     decomposed_search_hit['pages_info'][i] = page_info.copy()
                     i = i + 1
         except Exception as e:
