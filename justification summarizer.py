@@ -218,7 +218,7 @@ def main(args):
                 i = 0
                 for page_info in decomposed_search_hit['pages_info']:
                     if page_info['scraped_text'] != "":
-                        scraped_text_chunks = process_long_prompt(local_scraped_text_file_path, page_info['scraped_text'])
+                        scraped_text_chunks = process_long_prompt(local_scraped_text_file_path, page_info['page_content'])
                         page_info['justification_summary'] = summarize_justification(decomposed_justification, local_scraped_text_file_path, scraped_text_chunks)            
                         if os.path.isfile(local_scraped_text_file_path):
                             os.remove(local_scraped_text_file_path)
