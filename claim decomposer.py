@@ -3,10 +3,13 @@ import os
 import re
 import openai
 import pandas as pd
+import time
 from tqdm import tqdm
+from langchain_openai import ChatOpenAI
+from LLMsummarizer import promptLLM
 
 # OpenAI API Key
-openai.api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("OPENAI_API_KEY")
 
 WH_MATCHES = ("why", "who", "which", "what", "where", "when", "how")
 
@@ -19,76 +22,19 @@ MAX_GPT_CALLS = 5
 MAX_NUM_QUESTIONS = 10
 
 
-# Format example for static prompt
-def construct_static_examples():
-    showcase_examples = '''You are a fact-checker: What would be the ten most important yes or no types of questions to be asked to decompose the following claim: "{}"
-Provide only the question and its corresponding justification, without any other text.'''
-    return showcase_examples
-
-# Format context for prompt
-def construct_context(person, venue, claim):
-    return "{} {} {}".format(
-        person,
-        venue,
-        claim
-    )
-
-
 # Format prompt for GPT3 call
-def construct_prompt(showcase_examples, claim):
-    return showcase_examples.format(claim)
+def construct_prompt(claim, prompt_params=None):
+    prompt = '''You are a fact-checker: What would be the ten most important yes or no types of questions to be asked to decompose the following claim: "{}"
+All questions need to have a yes response if the claim is true. 
+Provide only the questions and their corresponding justification without any other text in the following format: 
+Question: 
+Justification: .'''.format(claim)
+    return prompt
 
+func_prompts = [construct_prompt]
 
 # Generate sub-questions and apply filtering 
-def decompose_claim(claim, questions, justifications, simulate_LLM=1):
-    showcase_examples = construct_static_examples()
-    prompt = construct_prompt(showcase_examples, claim)
-    if not simulate_LLM:
-        #Filipe 11/19
-        #res = openai.Completion.create(engine=ENGINE, prompt=prompt,
-                                    #temperature=0.7, max_tokens=1024,
-                                    #stop=["Claim"])
-        #res = res['choices'][0]["text"].strip()
-
-        res = openai.ChatCompletion.create(
-                model=ENGINE,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-                max_tokens=1024
-            )
-        res = res['choices'][0]['message']['content'].strip()
-
-    else:
-        res = '''1. Has the US reduced its total carbon emissions over the last decade?
-Justification: Establishes if emissions are actually decreasing in the US.
-
-2. Are the per capita carbon emissions in the US lower today than they were a decade ago?
-Justification: Measures reduction on a per-person basis, which reflects population-adjusted progress.
-
-3. Is the reduction in US carbon emissions greater than in other industrialized nations?
-Justification: Allows comparison with countries of similar economic status.
-
-4. Have specific sectors in the US, like energy production, shown significant emission reductions?
-Justification: Identifies if sectoral changes are driving the overall reduction.
-
-5. Has the US implemented federal policies specifically aimed at reducing carbon emissions?
-Justification: Determines if policy changes are actively contributing to emission reductions.
-
-6. Are there regions or states within the US with increased carbon emissions despite national trends?
-Justification: Tests if reductions are uniform across the country or regionally concentrated.
-
-7. Have US reductions in emissions been sustained during periods of economic growth?
-Justification: Confirms if reductions are resilient to economic cycles, which often increase emissions.
-
-8. Do other parts of the world have higher emissions reduction targets or commitments compared to the US?
-Justification: Assesses if other regions have comparable or more ambitious goals for emission reduction.
-
-9. Has the US decreased its use of fossil fuels, specifically coal, compared to other parts of the world?
-Justification: Examines the decline of high-emission energy sources as a contributor to reductions.
-
-10. Are US carbon emissions reductions offset by increases in consumption of goods produced in high-emission countries?
-Justification: Verifies if emission reductions are genuine or result from shifting carbon-intensive production abroad.'''
-
+def decompose_claim(res, questions, justifications):
     for q in res.splitlines():
         is_added = True
         q = q.strip()
@@ -139,22 +85,16 @@ def main(args):
     df["justifications"] = ""
     start = 0 if not args.start else args.start
     end = len(df) if not args.end else args.end
-
+    llm = ChatOpenAI(temperature = 0, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
+    start_time = time.time()
     for i in tqdm(range(start, end)):
         try:
-            #context = construct_context(
-                #df.iloc[i]['person'], df.iloc[i]['venue'], df.iloc[i]['claim'])
             claim = df.iloc[i]['claim']
             llm_called = 0
             questions = []
             justifications = []
-            while (len(questions) < MAX_NUM_QUESTIONS
-                   and llm_called < MAX_GPT_CALLS):
-                questions, justifications = decompose_claim(
-                    claim, questions, justifications, args.simulate_llm
-                )
-                llm_called += 1
-
+            response = promptLLM(llm, func_prompts, claim, start_time=start_time)
+            questions, justifications = decompose_claim(response.content, questions, justifications)
             df.at[i, 'claim questions'] = questions
             df.at[i, 'justifications'] = justifications
         except Exception as e:
@@ -170,6 +110,5 @@ if __name__ == '__main__':
     parser.add_argument('--output_path', type=str, default=None)
     parser.add_argument('--start', type=int, default=None)
     parser.add_argument('--end', type=int, default=None)
-    parser.add_argument('--simulate_llm', type=int, default=1)
     args = parser.parse_args()
     main(args)
