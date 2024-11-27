@@ -63,7 +63,7 @@ def semantic_similarity_search(scrapped_text, args, max_prompt_tokens = 4000, pr
         response = response + doc.page_content
     return response
 
-def summarize_justification(llm, prompt_funcs, scraped_text, start_time, max_prompt_tokens = 4000, prompt_params={}):
+def promptLLM(llm, prompt_funcs, scraped_text, start_time, max_prompt_tokens = 4000, prompt_params={}):
     func_names = []
     for prompt_func in prompt_funcs:
         func_names.append(prompt_func.__name__)
@@ -141,7 +141,7 @@ def main(args):
                             start_time = time.time()
                     else: 
                         scrapped_text = page_info['page_content']
-                    page_info['justification_summary'] = summarize_justification(llm, scrapped_text, start_time, prompt_params=prompt_params)         
+                    page_info['justification_summary'] = promptLLM(llm, scrapped_text, start_time, prompt_params=prompt_params)         
                     decomposed_search_hit['pages_info'][j] = page_info.copy()
                     j = j + 1
         except Exception as e:

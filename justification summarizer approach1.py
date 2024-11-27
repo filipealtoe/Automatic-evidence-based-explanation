@@ -10,7 +10,7 @@ import pandas as pd
 from tqdm import tqdm
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
-from LLMsummarizer import summarize_justification, semantic_similarity_search
+from LLMsummarizer import promptLLM, semantic_similarity_search
 
 # OpenAI API Key
 #openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -105,7 +105,7 @@ def main(args):
                             start_time = time.time()
                     else: 
                         scrapped_text = page_info['page_content']
-                    page_info['justification_summary'] = summarize_justification(llm, func_prompts, scrapped_text, start_time, prompt_params=prompt_params)         
+                    page_info['justification_summary'] = promptLLM(llm, func_prompts, scrapped_text, start_time, prompt_params=prompt_params)         
                     decomposed_search_hit['pages_info'][j] = page_info.copy()
                     j = j + 1
         except Exception as e:

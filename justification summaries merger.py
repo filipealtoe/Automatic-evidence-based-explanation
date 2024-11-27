@@ -10,7 +10,7 @@ import pandas as pd
 from tqdm import tqdm
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
-from LLMsummarizer import summarize_justification
+from LLMsummarizer import promptLLM
 
 
 # OpenAI API Key
@@ -113,7 +113,7 @@ def main(args):
                     k = k + 1        
                 merged_justification = ''.join(justifications)
                 prompt_params = {'decomposed_justification':all_rows[j*len(justifications)]['decomposed_justification']}
-                response = summarize_justification(llm, func_prompts, merged_justification, start_time=start_time, prompt_params=prompt_params)
+                response = promptLLM(llm, func_prompts, merged_justification, start_time=start_time, prompt_params=prompt_params)
                 all_rows[j*len(justifications)]['justification_summary'] = response.content
                 all_rows[j*len(justifications)]['summary_number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])                
                 justifications = []
