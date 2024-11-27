@@ -67,14 +67,16 @@ def construct_mapreduce_prompt(decomposed_justification, prompt_params={}):
     return prompt
 
 
-def construct_prompt(doc_text, prompt_params={}):
-    prompt = ''' Given the following hypothesis: "{}"
+def construct_prompt(doc_text, prompt_params=None):
+    prompt = ''' Given the following claim: "{}",
 
-    and context: "{}"
+    context: "{}", 
 
-Use only the context provided to determine if the hypothesis is True, False or Unverified.  
-Your response should be a single word.
-'''.format(prompt_params, doc_text)
+    and hypothesis related to the claim: "{}",
+
+    Use only the context provided to determine if the hypothesis is True or False.  
+    Your response should be a single word.
+'''.format(prompt_params['claim'], prompt_params['decomposed_justification'], doc_text)
     return prompt
 
 func_prompts = [construct_prompt, construct_mapreduce_prompt]
@@ -86,19 +88,19 @@ def main(args):
 
     #Temperature = 0 as we want the summary to be factual and based on the input text
     llm = ChatOpenAI(temperature = 0, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
-
+    start_time = time.time()
     for i in tqdm(range(start, end)):
         try:
             decomposed_search_hits = df.iloc[i]['decomposed_search_hits']
+            claim = df.iloc[i]['claim']
             row_info = {}
             all_rows = []
             j = 0
             for decomposed_search_hit in decomposed_search_hits:
                 row_info['decomposed_justification'] = decomposed_search_hit['decomposed_justification']
                 row_info['decomposed_question'] = decomposed_search_hit['decomposed_question']
-                row_info['decomposed_justification_explanation'] = decomposed_search_hit['decomposed_justification_explanation']
-                start_time = time.time()       
-                prompt_params = {'decomposed_justification':row_info['decomposed_justification']}
+                row_info['decomposed_justification_explanation'] = decomposed_search_hit['decomposed_justification_explanation']       
+                prompt_params = {'decomposed_justification':row_info['decomposed_justification'], 'claim':claim}
                 response = promptLLM(llm, func_prompts, row_info['decomposed_justification_explanation'], start_time=start_time, prompt_params=prompt_params)                
                 row_info['justification_explanation_verdict'] = response.content
                 all_rows.append(row_info.copy())

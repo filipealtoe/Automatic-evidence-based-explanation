@@ -46,7 +46,7 @@ logging.basicConfig(
 )
 
 
-def semantic_similarity_search(scrapped_text, args, max_prompt_tokens = 4000, prompt_params={}):
+def semantic_similarity_search(scrapped_text, args, max_prompt_tokens = 4000, prompt_params=None):
     temp_file_path  = args.input_path.split('.jsonl')[0] + '.txt'
     with open(temp_file_path, 'w', encoding="utf-8") as text_file:
         text_file.write(scrapped_text)
@@ -63,7 +63,7 @@ def semantic_similarity_search(scrapped_text, args, max_prompt_tokens = 4000, pr
         response = response + doc.page_content
     return response
 
-def promptLLM(llm, prompt_funcs, scraped_text, start_time, max_prompt_tokens = 4000, prompt_params={}):
+def promptLLM(llm, prompt_funcs, scraped_text, start_time, max_prompt_tokens = 4000, prompt_params=None):
     func_names = []
     for prompt_func in prompt_funcs:
         func_names.append(prompt_func.__name__)
@@ -82,12 +82,12 @@ def promptLLM(llm, prompt_funcs, scraped_text, start_time, max_prompt_tokens = 4
     #If scraped text is smaller than a single prompt chunk, just run the simple prompt
     if num_tokens <= max_prompt_tokens:
         index = func_names.index('construct_prompt')
-        prompt = prompt_funcs[index](scraped_text, prompt_params['decomposed_justification'])
+        prompt = prompt_funcs[index](scraped_text, prompt_params)
         with get_openai_callback() as callback_handler:
             response = llm.invoke(prompt)
     else:
         index = func_names.index('construct_mapreduce_prompt')
-        prompt = prompt_funcs[index](prompt_params['decomposed_justification'])
+        prompt = prompt_funcs[index](prompt_params)
         summary_chain = load_summarize_chain(llm=llm,
                                     chain_type='map_reduce',
                                     map_prompt=prompt['map_prompt'],
