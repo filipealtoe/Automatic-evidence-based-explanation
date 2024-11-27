@@ -34,7 +34,7 @@ Justification: .'''.format(claim)
 func_prompts = [construct_prompt]
 
 # Generate sub-questions and apply filtering 
-def decompose_claim(res, questions, justifications):
+def format_response(res, questions, justifications):
     for q in res.splitlines():
         is_added = True
         q = q.strip()
@@ -46,6 +46,7 @@ def decompose_claim(res, questions, justifications):
                 is_justification = True
             except:
                 is_justification = False
+                q = q.split("Question: ")[1]
             # Remove quotation mark if there are any
             q = re.sub('"', '', q)
             # Remove question number if there are any
@@ -94,7 +95,7 @@ def main(args):
             questions = []
             justifications = []
             response = promptLLM(llm, func_prompts, claim, start_time=start_time)
-            questions, justifications = decompose_claim(response.content, questions, justifications)
+            questions, justifications = format_response(response.content, questions, justifications)
             df.at[i, 'claim questions'] = questions
             df.at[i, 'justifications'] = justifications
         except Exception as e:
@@ -102,6 +103,7 @@ def main(args):
             print('i=', i)
 
     df.to_json(args.output_path, orient='records', lines=True)
+    print('Done!')
 
 
 if __name__ == '__main__':
