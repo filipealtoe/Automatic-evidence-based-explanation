@@ -79,6 +79,10 @@ func_prompts = [construct_prompt, construct_mapreduce_prompt]
 
 
 def main(args):
+    '''In this approach we summarize each URL doc using a LLM. If the URL doc is larger than 0.75 * LLM max number of tokens per minute, 
+    perform semantic similarity against the justification, then extract an arbitrary number (20) of similar docs as the summary. Otherwise,
+    perform LLM summarization. This approach took 2h 23 mins and about $2,63 (GPT-4o-mini) for the 10 justifications and 10 URL docs per justification
+    '''
     df = pd.read_json(args.input_path, lines=True)
     start = 0 if not args.start else args.start
     end = len(df) if not args.end else args.end
