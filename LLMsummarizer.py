@@ -46,7 +46,7 @@ logging.basicConfig(
 )
 
 
-def semantic_similarity_search(scrapped_text, args, max_prompt_tokens = 4000, prompt_params=None):
+def semantic_similarity_search(scrapped_text, args, max_prompt_tokens = 4000, prompt_params=None, numb_similar_docs=20):
     temp_file_path  = args.input_path.split('.jsonl')[0] + '.txt'
     with open(temp_file_path, 'w', encoding="utf-8") as text_file:
         text_file.write(scrapped_text)
@@ -57,7 +57,7 @@ def semantic_similarity_search(scrapped_text, args, max_prompt_tokens = 4000, pr
     db = Chroma.from_documents(documents, OpenAIEmbeddings())
     embedding_vector = OpenAIEmbeddings().embed_query(prompt_params['decomposed_justification'])
     #Return the top 20 most similar documents
-    docs = db.similarity_search_by_vector(embedding_vector, k=20)
+    docs = db.similarity_search_by_vector(embedding_vector, k=numb_similar_docs)
     response = ''
     for doc in docs:
         response = response + doc.page_content
