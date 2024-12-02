@@ -119,7 +119,7 @@ def main(args):
     df1 = pd.DataFrame(all_rows)
     csv_file_path = args.output_path.split('.jsonl')[0] + '.csv'
     df1.to_csv(csv_file_path, sep ='\t', header=True, index=False, encoding='utf-8')
-    print('Done merging!!!') 
+    print('Done classifying!!!') 
 
 
 if __name__ == '__main__':
