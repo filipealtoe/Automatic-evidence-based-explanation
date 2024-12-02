@@ -19,16 +19,17 @@ NUMBERS = ("1.", "2.", "3.", "4.", "5.", "6.", "7.", "8.", "9.", "10.")
 ENGINE = 'gpt-4o'
 # The stop criteria for question generation, feel free to change
 MAX_GPT_CALLS = 5
+#Number of decomposed questions to be generated
 MAX_NUM_QUESTIONS = 10
 
 
 # Format prompt for GPT3 call
 def construct_prompt(claim, prompt_params=None):
-    prompt = '''You are a fact-checker: What would be the ten most important yes or no types of questions to be asked to decompose the following claim: "{}"
+    prompt = '''You are a fact-checker: What would be the {} most important yes or no types of questions to be asked to decompose the following claim: "{}"
 All questions need to have a yes response if the claim is true. 
 Provide only the questions and their corresponding justification without any other text in the following format: 
 Question: 
-Justification: .'''.format(claim)
+Justification: .'''.format(prompt_params['numbed_of_questions'], claim)
     return prompt
 
 func_prompts = [construct_prompt]
@@ -94,7 +95,7 @@ def main(args):
             llm_called = 0
             questions = []
             justifications = []
-            response = promptLLM(llm, func_prompts, claim, start_time=start_time)
+            response = promptLLM(llm, func_prompts, claim, start_time=start_time, prompt_params={'numbed_of_questions':MAX_NUM_QUESTIONS})
             questions, justifications = format_response(response.content, questions, justifications)
             df.at[i, 'claim questions'] = questions
             df.at[i, 'justifications'] = justifications
