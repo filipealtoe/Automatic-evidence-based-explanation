@@ -42,7 +42,7 @@ logging.basicConfig(
 )
 
 # Format example for static prompt
-def construct_mapreduce_prompt(decomposed_justification, prompt_params={}):
+def construct_mapreduce_prompt(decomposed_justification):
     prompt = {}
     hypotesis = "Hypothesis: " + decomposed_justification
     map_prompt = hypotesis + """
@@ -56,9 +56,9 @@ def construct_mapreduce_prompt(decomposed_justification, prompt_params={}):
 
     combine_prompt = """
     You will be given a series of summaries text. The text will be enclosed in triple backquotes (''')
-    Summarize the text without losing information.
     '''{text}'''
-    Return only the summary without any additional text.
+    Summarize the text without losing information. Only include information that is present in the document in a factual manner.
+    Your response should not make any reference to "the text" or "the document" and be ready to be merged into a fact-check article.
     """
     combine_prompt_template = PromptTemplate(template=combine_prompt, input_variables=["text"])
 
@@ -114,10 +114,14 @@ def main(args):
                 merged_justification = ''.join(justifications)
                 prompt_params = {'decomposed_justification':all_rows[j*len(justifications)]['decomposed_justification']}
                 response = promptLLM(llm, func_prompts, merged_justification, start_time=start_time, prompt_params=prompt_params)
-                all_rows[j*len(justifications)]['justification_summary'] = response.content
+                try:
+                    response_text = response.content
+                except:
+                    response_text = response['output_text']
+                all_rows[j*len(justifications)]['justification_summary'] = response_text
                 all_rows[j*len(justifications)]['summary_number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])                
                 justifications = []
-                decomposed_search_hit['decomposed_justification_explanation'] = response.content
+                decomposed_search_hit['decomposed_justification_explanation'] = response_text
                 j = j + 1
         except Exception as e:
             print("error caught", e)

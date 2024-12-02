@@ -15,6 +15,7 @@ from langchain_community.callbacks import get_openai_callback
 from langchain_community.document_loaders import TextLoader
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
+from langchain_community.vectorstores import Qdrant
 
 # OpenAI API Key
 #openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -63,6 +64,7 @@ def semantic_similarity_search(scrapped_text, args, max_prompt_tokens = 4000, pr
         response = response + doc.page_content
     return response
 
+
 def promptLLM(llm, prompt_funcs, scraped_text, start_time, max_prompt_tokens = 4000, prompt_params=None):
     func_names = []
     for prompt_func in prompt_funcs:
@@ -87,7 +89,7 @@ def promptLLM(llm, prompt_funcs, scraped_text, start_time, max_prompt_tokens = 4
             response = llm.invoke(prompt)
     else:
         index = func_names.index('construct_mapreduce_prompt')
-        prompt = prompt_funcs[index](prompt_params)
+        prompt = prompt_funcs[index](prompt_params['decomposed_justification'])
         summary_chain = load_summarize_chain(llm=llm,
                                     chain_type='map_reduce',
                                     map_prompt=prompt['map_prompt'],
