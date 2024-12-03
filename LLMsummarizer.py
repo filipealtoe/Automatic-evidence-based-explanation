@@ -13,9 +13,14 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import ChatOpenAI
 from langchain_community.callbacks import get_openai_callback
 from langchain_community.document_loaders import TextLoader
+from langchain_community.vectorstores import FAISS
+import faiss
+from uuid import uuid4
+from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
-from langchain_community.vectorstores import Qdrant
+
+
 
 # OpenAI API Key
 #openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -62,8 +67,40 @@ def semantic_similarity_search(scrapped_text, args, max_prompt_tokens = 4000, pr
     response = ''
     for doc in docs:
         response = response + doc.page_content
+    os.remove(temp_file_path)
     return response
 
+def Faiss_similarity_search(scrapped_text, args, max_prompt_tokens = 4000, prompt_params=None, numb_similar_docs=20):
+    temp_file_path  = args.input_path.split('.jsonl')[0] + '.txt'
+    with open(temp_file_path, 'w', encoding="utf-8") as text_file:
+        text_file.write(scrapped_text)
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+    # Load the document, split it into chunks, embed each chunk and load it into the vector store.
+    raw_documents = TextLoader(temp_file_path, encoding='UTF-8').load()
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=int(max_prompt_tokens/0.75), chunk_overlap=0)
+    documents = text_splitter.split_documents(raw_documents)
+    #db = Chroma.from_documents(documents, embeddings)
+    embedding_vector = embeddings.embed_query(prompt_params['decomposed_justification'])
+    index = faiss.IndexFlatL2(len(embedding_vector))
+    vector_store = FAISS(
+    embedding_function=embeddings,
+    index=index,
+    docstore=InMemoryDocstore(),
+    index_to_docstore_id={},
+)
+    uuids = [str(uuid4()) for _ in range(len(documents))]
+    vector_store.add_documents(documents=documents, ids=uuids)
+
+    results = vector_store.similarity_search(
+    prompt_params['decomposed_justification'],
+    k=numb_similar_docs,
+)
+    
+    #docs = db.similarity_search_by_vector(embedding_vector, k=numb_similar_docs)
+    response = ''
+    for res in results:
+        response = response + res.page_content
+    return response
 
 def promptLLM(llm, prompt_funcs, scraped_text, start_time, max_prompt_tokens = 4000, prompt_params=None):
     func_names = []

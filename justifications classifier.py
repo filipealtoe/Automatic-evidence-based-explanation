@@ -22,7 +22,7 @@ ENGINE = 'gpt-4o-mini'
 # Max number of LLM retries
 MAX_GPT_CALLS = 5
 
-if ENGINE == 'gpt-4o-mini':
+if ENGINE == 'gpt-4o':
     max_tokens_min = 200000
 else:
     max_tokens_min = 30000
@@ -74,7 +74,7 @@ def construct_prompt(doc_text, prompt_params=None):
 
     and hypothesis related to the claim: "{}",
 
-    Use only the context provided to determine if the hypothesis is True or False.  
+    Use only the context provided to determine if the hypothesis is True, False or Unverified.  
     Your response should be a single word.
 '''.format(prompt_params['claim'], prompt_params['decomposed_justification'], doc_text)
     return prompt

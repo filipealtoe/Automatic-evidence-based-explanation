@@ -5,12 +5,11 @@ import openai
 import logging
 import time
 from collections import deque
-import json
 import pandas as pd
 from tqdm import tqdm
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
-from LLMsummarizer import promptLLM, semantic_similarity_search
+from LLMsummarizer import promptLLM, semantic_similarity_search, Faiss_similarity_search
 
 # OpenAI API Key
 #openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -104,7 +103,7 @@ def main(args):
                     page_info['justification_summary'] = {}   
                     numb_tokens = int(NUMB_WORDS_PER_DOC/0.75)  
                     numb_docs = int(NUMB_SIMILAR_WORDS_RETURNED/NUMB_WORDS_PER_DOC)             
-                    page_info['justification_summary']['output_text'] = semantic_similarity_search(page_info['page_content'], args, max_prompt_tokens = numb_tokens, 
+                    page_info['justification_summary']['output_text'] = Faiss_similarity_search(page_info['page_content'], args, max_prompt_tokens = numb_tokens, 
                                                                prompt_params=prompt_params, numb_similar_docs=numb_docs)
                     #If semantic similarity search took longer than the set interval for tokens per minute, restart start time
                     if time.time() - start_time > INTERVAL_SECONDS:
