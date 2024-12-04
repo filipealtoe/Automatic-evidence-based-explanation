@@ -130,8 +130,8 @@ def process_chunk(chunk, chunk_idx, retriever, args):
 
 
 def main(args):
-    if 'jsonl' in args.input_url:
-        df = pd.read_json(args.input_url, lines=True)
+    if 'jsonl' in args.input_path:
+        df = pd.read_json(args.input_path, lines=True)
     else:
         url = args.url.replace('/edit#gid=', '/export?format=csv&gid=')
         df = pd.read_csv(url)
@@ -151,8 +151,14 @@ def main(args):
         answer_count=args.answer_count,
         sites_constrain=args.sites_constrain,
     )
-    start = args.start
-    end = min(len(df), args.end)
+    if args.start == None:
+        start = 0
+    else:
+        start = args.start
+    if args.end == None:
+        end = len(df)
+    else:
+        end = min(len(df), args.end)
 
     chunks = df
     results = process_chunk(chunks, len(chunks.index), web_retriever, args)
@@ -162,7 +168,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_url', type=str, default=None,
+    parser.add_argument('--input_path', type=str, default=None,
                         help="url of the input file, could be a local jsonl or a google sheet")
     parser.add_argument('--output_path', type=str, default=None, help="path of the output file")
     parser.add_argument('--use_time_stamp', type=int, default=1, help="whether to use time stamp as search constraint")

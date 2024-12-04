@@ -33,7 +33,7 @@ def construct_prompt(claim, prompt_params=None):
     
     prompt = '''You are a fact-checker. Assume the following claim is false: "{}". 
     What would be the {} most important yes or no types of questions to be asked to verify the claim is false?
-All questions need to have a no response if the claim is false. 
+All questions need to have a "no" response if the claim is false. 
 Provide only the questions and their corresponding justification without any other text in the following format: 
 Question: 
 Justification: .'''.format(claim, prompt_params['numbed_of_questions'])

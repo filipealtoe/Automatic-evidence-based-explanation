@@ -1,17 +1,10 @@
 import argparse
 import os
-import re
-import openai
 import logging
-import time
 from collections import deque
-import json
-import pandas as pd
-from tqdm import tqdm
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import PromptTemplate
-from LLMsummarizer import promptLLM
-import "claim decomposer.py" 
+import time
+import claim_decomposer, web_search, justification_summarizer_approach1, justification_summarizer_approach2
+import justification_summaries_merger, justifications_classifier, evidence_based_article
 
 
 # OpenAI API Key
@@ -42,62 +35,65 @@ logging.basicConfig(
     handlers=[logging.FileHandler("file_management.log"), logging.StreamHandler()]
 )
 
-# Format example for static prompt
-def construct_mapreduce_prompt(claim, prompt_params={}):
-    prompt = {}
-    hypotesis = "Claim: " + claim
-    map_prompt = hypotesis + """
-
-    You are a fact-check article writer. You will be given text that proves the following claim is {}. Claim: {}. 
-    The text will be enclosed in triple triple backquotes (''').
-    '''{text}'''
-    Return an article only the summary without any additional text.
-    """
-    map_prompt_template = PromptTemplate(template=map_prompt, input_variables=["text"])
-
-    combine_prompt = """
-    You will be given a series of summaries text. The text will be enclosed in triple backquotes (''')
-    Summarize the text without losing information.
-    '''{text}'''
-    Return only the summary without any additional text.
-    """
-    combine_prompt_template = PromptTemplate(template=combine_prompt, input_variables=["text"])
-
-    prompt['map_prompt'] = map_prompt_template
-    prompt['combine_prompt'] = combine_prompt_template
-    return prompt
-
-
-def construct_prompt(doc_text, prompt_params=None):
-    prompt = ''' Rewrite the following text in the format of an article without a title. "{}"
-    Your answer should return only the article and a conclusion why the following claim is {}: {}
-    
-'''.format(doc_text, prompt_params['label'], prompt_params['claim'])
-    return prompt
-
-func_prompts = [construct_prompt, construct_mapreduce_prompt]
 
 def main(args):
     try:
-
+        args.output_path = args.decomposition_output_path
+        print('Start Ddecomposition!!!')
+        start_time = time.time()
+        run_start_time = time.time()
+        claim_decomposer.main(args)
+        print('Time to complete Decomposition (sec): {}'.format(str(time.time() - start_time)))
+        print('Decomposition Done!!!')
+        args.input_path = args.decomposition_output_path
+        args.output_path = args.web_search_output_path
+        start_time = time.time()
+        web_search.main(args)
+        print('Time to complete Web Search (sec): {}'.format(str(time.time() - start_time)))
+        print('All Web Search Done!!!')
+        args.input_path = args.web_search_output_path
+        args.output_path = args.justification_summarization_output_path
+        start_time = time.time()
+        justification_summarizer_approach2.main(args)
+        print('Time to complete Summarization (sec): {}'.format(str(time.time() - start_time)))
+        print('Justification Summarization Done!!!')
+        args.input_path = args.justification_summarization_output_path
+        args.output_path = args.justification_merger_output_path
+        start_time = time.time()
+        justification_summaries_merger.main(args)
+        print('Time to complete Summarization Merger (sec): {}'.format(str(time.time() - start_time)))
+        print('Justification Merging Done!!!')
+        args.input_path = args.justification_merger_output_path
+        args.output_path = args.classifier_output_path
+        start_time = time.time()
+        justifications_classifier.main(args)
+        print('Time to complete Classification (sec): {}'.format(str(time.time() - start_time)))
+        print('All Done!!!') 
+        print('Total Time to complete the Run (sec): {}'.format(str(time.time() - run_start_time)))
     except Exception as e:
-        print("error caught", e)
-                 
-
+        print("error caught", e)             
     
-    df.to_json(args.output_path, orient='records', lines=True)
-    #Auxilary file to facilitate manual analysis
-    df1 = pd.DataFrame(all_rows)
-    csv_file_path = args.output_path.split('.jsonl')[0] + '.csv'
-    df1.to_csv(csv_file_path, sep ='\t', header=True, index=False, encoding='utf-8')
-    print('Done classifying!!!') 
+    
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_path', type=str, default=None)
-    parser.add_argument('--output_path', type=str, default=None)
+    parser.add_argument('--final_output_path', type=str, default=None)
+    parser.add_argument('--decomposition_output_path', type=str, default=None)
+    parser.add_argument('--web_search_output_path', type=str, default=None)
+    parser.add_argument('--justification_summarization_output_path', type=str, default=None)
+    parser.add_argument('--justification_merger_output_path', type=str, default=None)
+    parser.add_argument('--classifier_output_path', type=str, default=None)
     parser.add_argument('--start', type=int, default=None)
     parser.add_argument('--end', type=int, default=None)
+    parser.add_argument('--use_time_stamp', type=int, default=1)
+    parser.add_argument('--answer_count', type=int, default=10)
+    parser.add_argument('--time_offset', type=int, default=1, help="add an offest to the time at which the claim was made on web search")
+    parser.add_argument('--sites_constrain', type=int, default=1,
+                        help="whether to constrain the web search to certain sites")
+    parser.add_argument('--use_annotation', type=int, default=0, help="whether to use annotated questions on web search")
+    parser.add_argument('--use_claim', type=int, default=0, help="whether to use claim as question on web search")
+    parser.add_argument('--question_num', type=int, default=10, help="number of questions to use on web search")
     args = parser.parse_args()
     main(args)

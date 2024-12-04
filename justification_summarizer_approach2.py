@@ -114,6 +114,8 @@ def main(args):
                         start_time = time.time()         
                     decomposed_search_hit['pages_info'][j] = page_info.copy()
                     j = j + 1
+            df.to_json(args.output_path, orient='records', lines=True)
+            print('Summarization Complete!')
         except Exception as e:
             print("error caught", e)
             print('Dataset row = ', i)
@@ -123,9 +125,6 @@ def main(args):
             print('Page name: ', page_info['page_name']) 
             print('Page url: ', page_info['page_url'])
             print('Page content length: ', len(page_info['page_content'].strip().split(" ")))
-
-    df.to_json(args.output_path, orient='records', lines=True)
-    print('Summarization Complete!')
 
 
 if __name__ == '__main__':
