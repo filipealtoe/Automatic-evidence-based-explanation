@@ -68,11 +68,22 @@ def construct_mapreduce_prompt(decomposed_justification):
 
 
 def construct_prompt(doc_text, prompt_params={}):
-    prompt = ''' Document: "{}"
+    #Approach 1
+    prompt_old = ''' Document: "{}"
 
 Summarize the document in a single paragraph. Only include information that is present in the document in a factual manner.
 Your response should not make any reference to "the text" or "the document" and be ready to be merged into a fact-check article.
 '''.format(doc_text)
+    
+    prompt = ''' Document: "{}"
+Question: "{}
+
+Only include information that is present in the document in a factual manner to answer the question in a single paragraph. 
+
+Your response should not make any reference to "the text" or "the document" and be ready to be merged into a fact-check article.
+'''.format(doc_text, prompt_params['question'])
+    #Approach 2
+
     return prompt
 
 func_prompts = [construct_prompt, construct_mapreduce_prompt]
@@ -91,6 +102,7 @@ def main(args):
             row_info = {}
             all_rows = []
             j = 0
+            justification_summary_line = 0
             for decomposed_search_hit in decomposed_search_hits:
                 row_info['decomposed_justification'] = decomposed_search_hit['decomposed_justification']
                 row_info['decomposed_question'] = decomposed_search_hit['decomposed_question']
@@ -98,6 +110,7 @@ def main(args):
                 row_info['summary_number_of_tokens'] = None
                 justifications = []
                 start_time = time.time()
+                justification_summary_line = len(all_rows)
                 k = 0
                 for page_info in decomposed_search_hit['pages_info']:
                     row_info['page_url'] = page_info['page_url']  
@@ -112,14 +125,17 @@ def main(args):
                     row_info['decomposed_question'] = None 
                     k = k + 1        
                 merged_justification = ''.join(justifications)
-                prompt_params = {'decomposed_justification':all_rows[j*len(justifications)]['decomposed_justification']}
+                prompt_params = {'decomposed_justification':decomposed_search_hit['decomposed_justification'],
+                                 'question': decomposed_search_hit['decomposed_question']}
                 response = promptLLM(llm, func_prompts, merged_justification, start_time=start_time, prompt_params=prompt_params)
                 try:
                     response_text = response.content
                 except:
                     response_text = response['output_text']
-                all_rows[j*len(justifications)]['justification_summary'] = response_text
-                all_rows[j*len(justifications)]['summary_number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])                
+                #all_rows[j*len(justifications)]['justification_summary'] = response_text
+                #all_rows[j*len(justifications)]['summary_number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])     
+                all_rows[justification_summary_line]['justification_summary'] = response_text
+                all_rows[justification_summary_line]['summary_number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])           
                 justifications = []
                 decomposed_search_hit['decomposed_justification_explanation'] = response_text
                 j = j + 1
