@@ -9,7 +9,7 @@ import pandas as pd
 from tqdm import tqdm
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
-from LLMsummarizer import promptLLM, semantic_similarity_search, Faiss_similarity_search
+from LLMsummarizer import Faiss_similarity_search
 
 # OpenAI API Key
 #openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -94,8 +94,12 @@ def main(args):
         try:
             decomposed_search_hits = df.iloc[i]['decomposed_search_hits']
             for decomposed_search_hit in decomposed_search_hits:
-                decomposed_justification = decomposed_search_hit['decomposed_justification']
-                prompt_params = {'decomposed_justification':decomposed_justification}
+                # Summarizing based on the justification
+                #decomposed_justification = decomposed_search_hit['decomposed_justification']
+                #prompt_params = {'decomposed_justification':decomposed_justification}
+                # Summarizing based on the claim 
+                decomposed_question = decomposed_search_hit['decomposed_question']
+                prompt_params = {'decomposed_justification':decomposed_question}
                 j = 0
                 start_time = time.time()
                 #Summarize each url page content
@@ -121,6 +125,7 @@ def main(args):
             print('Page content length: ', len(page_info['page_content'].strip().split(" ")))
 
     df.to_json(args.output_path, orient='records', lines=True)
+    print('Summarization Complete!')
 
 
 if __name__ == '__main__':

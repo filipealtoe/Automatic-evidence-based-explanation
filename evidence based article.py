@@ -18,11 +18,11 @@ from LLMsummarizer import promptLLM
 api_key = os.getenv("OPENAI_API_KEY")
 
 # OpenAI Engine, feel free to change
-ENGINE = 'gpt-4o-mini'
+ENGINE = 'gpt-4o'
 # Max number of LLM retries
 MAX_GPT_CALLS = 5
 
-if ENGINE == 'gpt-4o':
+if ENGINE == 'gpt-4o-mini':
     max_tokens_min = 200000
 else:
     max_tokens_min = 30000
@@ -42,15 +42,15 @@ logging.basicConfig(
 )
 
 # Format example for static prompt
-def construct_mapreduce_prompt(decomposed_justification, prompt_params={}):
+def construct_mapreduce_prompt(claim, prompt_params={}):
     prompt = {}
-    hypotesis = "Hypothesis: " + decomposed_justification
+    hypotesis = "Claim: " + claim
     map_prompt = hypotesis + """
 
-    You will be given text that may or may not provide evidence to the hypothesis. The text will be enclosed in triple triple backquotes (''').
-    Summarize the text including only the passages that are relevant to confirm or deny the hypothesis.
+    You are a fact-check article writer. You will be given text that proves the following claim is {}. Claim: {}. 
+    The text will be enclosed in triple triple backquotes (''').
     '''{text}'''
-    Return only the summary without any additional text.
+    Return an article only the summary without any additional text.
     """
     map_prompt_template = PromptTemplate(template=map_prompt, input_variables=["text"])
 
@@ -68,23 +68,10 @@ def construct_mapreduce_prompt(decomposed_justification, prompt_params={}):
 
 
 def construct_prompt(doc_text, prompt_params=None):
-    old_prompt = ''' Given the following claim: "{}",
-
-    context: "{}", 
-
-    and hypothesis related to the claim: "{}",
-
-    Use only the context provided to determine if the hypothesis is True, False or Unverified.  
-    Your response should be a single word.
-'''.format(prompt_params['claim'], doc_text, prompt_params['decomposed_justification'])
+    prompt = ''' Rewrite the following text in the format of an article without a title. "{}"
+    Your answer should return only the article and a conclusion why the following claim is {}: {}
     
-    prompt = ''' Given the following context: "{}".
-
-    Use only the context provided to verify of the following hypothesis is True, False or Unverified.  
-    Hypothesis: "{}'
-    Your response should be a single word.
-'''.format(doc_text, prompt_params['decomposed_justification'])
-    
+'''.format(doc_text, prompt_params['label'], prompt_params['claim'])
     return prompt
 
 func_prompts = [construct_prompt, construct_mapreduce_prompt]
@@ -95,33 +82,34 @@ def main(args):
     end = len(df) if not args.end else args.end
 
     #Temperature = 0 as we want the summary to be factual and based on the input text
-    llm = ChatOpenAI(temperature = 0, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
+    llm = ChatOpenAI(temperature = 0, model = ENGINE, api_key = api_key, max_tokens = 4096, max_retries = MAX_GPT_CALLS)
     start_time = time.time()
+    all_rows = []
     for i in tqdm(range(start, end)):
         try:
             decomposed_search_hits = df.iloc[i]['decomposed_search_hits']
             claim = df.iloc[i]['claim']
-            row_info = {}
-            all_rows = []
+            label = df.iloc[i]['label']
+            if label == 'pants-fire':
+                label = 'false'
+            row_info = {'claim':claim, 'label':label}
             j = 0
+            explanation = ''
             for decomposed_search_hit in decomposed_search_hits:
-                row_info['decomposed_justification'] = decomposed_search_hit['decomposed_justification']
-                row_info['decomposed_question'] = decomposed_search_hit['decomposed_question']
-                row_info['decomposed_justification_explanation'] = decomposed_search_hit['decomposed_justification_explanation']       
-                prompt_params = {'decomposed_justification':row_info['decomposed_justification'], 'claim':claim,
-                                 'decomposed_question':row_info['decomposed_question']}
-                response = promptLLM(llm, func_prompts, row_info['decomposed_justification_explanation'], 
-                                     start_time=start_time, prompt_params=prompt_params)                
-                row_info['justification_explanation_verdict'] = response.content
-                all_rows.append(row_info.copy())
-                decomposed_search_hit['justification_explanation_verdict'] = row_info['justification_explanation_verdict']
-                j = j + 1
+                explanation = explanation + decomposed_search_hit['decomposed_justification_explanation']       
+            prompt_params = {'claim':claim, 'label':label}
+            response = promptLLM(llm, func_prompts, explanation, max_prompt_tokens=8000,
+                                    start_time=start_time, 
+                                    prompt_params=prompt_params)                
+            row_info['evidence_based_article'] = response.content
+            all_rows.append(row_info.copy())
+            decomposed_search_hit['evidence_based_article'] = row_info['evidence_based_article']
+            j = j + 1
         except Exception as e:
             print("error caught", e)
             print('Dataset row = ', i)
-            print('Pages Info index = ', j)
-            print('Decomposed Question: ', decomposed_search_hit['decomposed_question'])
-            print('Decomposed Justification: ', decomposed_search_hit['decomposed_justification'])          
+            #print('Decomposed Question: ', decomposed_search_hit['decomposed_question'])
+            #print('Decomposed Justification: ', decomposed_search_hit['decomposed_justification'])          
 
     
     df.to_json(args.output_path, orient='records', lines=True)

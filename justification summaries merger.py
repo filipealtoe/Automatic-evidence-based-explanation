@@ -75,14 +75,15 @@ Summarize the document in a single paragraph. Only include information that is p
 Your response should not make any reference to "the text" or "the document" and be ready to be merged into a fact-check article.
 '''.format(doc_text)
     
-    prompt = ''' Document: "{}"
-Question: "{}
-
-Only include information that is present in the document in a factual manner to answer the question in a single paragraph. 
-
-Your response should not make any reference to "the text" or "the document" and be ready to be merged into a fact-check article.
-'''.format(doc_text, prompt_params['question'])
     #Approach 2
+    prompt = ''' Document: "{}"
+Summarize the document in a single paragraph answering the following question: "{}
+
+Only include information that is present in the document in a factual manner. 
+
+Your response should not make any reference to "the text", "the document" or "the question" and be ready to be merged into a fact-check article.
+'''.format(doc_text, prompt_params['question'])
+    
 
     return prompt
 
