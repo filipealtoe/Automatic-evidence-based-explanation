@@ -157,6 +157,7 @@ def main(args):
     chunks = df
     results = process_chunk(chunks, len(chunks.index), web_retriever, args)
     results.to_json(args.output_path, orient='records', lines=True)
+    print('Done Web Searching!')
 
 
 if __name__ == '__main__':
