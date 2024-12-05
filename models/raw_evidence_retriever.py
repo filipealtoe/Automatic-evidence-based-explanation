@@ -5,6 +5,7 @@ import requests
 from htmldate import find_date
 import logging
 from bs4 import BeautifulSoup
+import mmPeriodicTimer as timeout_alarm
 
 excluded_sites = ["politifact.com",
                   "factcheck.org",
@@ -36,16 +37,18 @@ PLACE_HOLDER = {
     ]
 }
 
-
-def timeout_handler(num, stack):
-    print("received sigalrm")
-    raise Exception("Time out!")
+#This is called when class mmPeriodicTime ticks
+def timeout_handler():
+    print("received time out alarm")
+    raise Exception("Web scraping time out!")
 
 def scrape_website_text(url):
         logging.info(f"Starting to scrape URL: {url}")
+        scraper_alarm = timeout_alarm.mmPeriodicTimer(interval=60, tickfunc=timeout_handler, periodic=False)
+        scraper_alarm.start()
         try:
             # Fetch the content of the webpage
-            response = requests.get(url)
+            response = requests.get(url, timeout=60)
             response.raise_for_status()  # Raise HTTPError for bad responses
             logging.info("Page fetched successfully.")
 
@@ -56,15 +59,22 @@ def scrape_website_text(url):
             # Extract and concatenate visible text from the HTML elements
             text = ' '.join(element.get_text(strip=True) for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'li', 'span', 'div']))
             logging.info(f"Successfully scraped text from URL: {url}")
-
+            scraper_alarm.stop()
             return text
 
         except requests.RequestException as e:
             logging.error(f"An error occurred while fetching the URL: {e}")
+            scraper_alarm.stop()
+            return ""
+        
+        except requests.exceptions as e:
+            logging.error(f"An error occurred while fetching the URL: {e}")
+            scraper_alarm.stop()
             return ""
 
         except Exception as e:
             logging.error(f"An unexpected error occurred: {e}")
+            scraper_alarm.stop()
             return ""
 
 
@@ -132,7 +142,7 @@ class WebRetriever:
                 return PLACE_HOLDER
             retrieved_pages = response_json['webPages']['value']
             count = 0
-            #Filipe 11/13
+            #Filipe 11/13 SIGALRM not supported on Windows OS
             #signal.signal(signal.SIGALRM, timeout_handler)
             #signal.alarm(10)
             

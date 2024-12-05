@@ -101,7 +101,8 @@ def main(args):
         try:
             decomposed_search_hits = df.iloc[i]['decomposed_search_hits']
             claim = df.iloc[i]['claim']
-            row_info = {}
+            label = df.iloc[i]['label']
+            row_info = {'claim': claim, 'label':label}
             all_rows = []
             j = 0
             for decomposed_search_hit in decomposed_search_hits:
@@ -114,6 +115,9 @@ def main(args):
                                      start_time=start_time, prompt_params=prompt_params)                
                 row_info['justification_explanation_verdict'] = response.content
                 all_rows.append(row_info.copy())
+                if j == 0:
+                    row_info['claim'] = None
+                    row_info['label'] = None
                 decomposed_search_hit['justification_explanation_verdict'] = row_info['justification_explanation_verdict']
                 j = j + 1
         except Exception as e:
