@@ -96,12 +96,11 @@ def main(args):
 
     #Temperature = 0 as we want the summary to be factual and based on the input text
     llm = ChatOpenAI(temperature = 0, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
-
+    all_rows = []
     for i in tqdm(range(start, end)):
         try:
             decomposed_search_hits = df.iloc[i]['decomposed_search_hits']
-            row_info = {}
-            all_rows = []
+            row_info = {}            
             j = 0
             justification_summary_line = 0
             for decomposed_search_hit in decomposed_search_hits:

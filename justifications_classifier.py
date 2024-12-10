@@ -83,7 +83,14 @@ def construct_prompt(doc_text, prompt_params=None):
     Use only the context provided to verify of the following hypothesis is True, False or Unverified.  
     Hypothesis: "{}'
     Your response should be a single word.
-'''.format(doc_text, prompt_params['decomposed_justification'])
+'''.format(doc_text, prompt_params['decomposed_question'])
+    
+    prompt = ''' Given the following context: "{}".
+
+    Use only the context provided to answer the following question as Yes, No or Unverified.  
+    Question: "{}'
+    Your response should be a single word.
+'''.format(doc_text, prompt_params['decomposed_question'])
     
     return prompt
 
@@ -97,13 +104,13 @@ def main(args):
     #Temperature = 0 as we want the summary to be factual and based on the input text
     llm = ChatOpenAI(temperature = 0, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
     start_time = time.time()
+    all_rows = []
     for i in tqdm(range(start, end)):
         try:
             decomposed_search_hits = df.iloc[i]['decomposed_search_hits']
             claim = df.iloc[i]['claim']
             label = df.iloc[i]['label']
-            row_info = {'claim': claim, 'label':label}
-            all_rows = []
+            row_info = {'claim': claim, 'label':label}            
             j = 0
             for decomposed_search_hit in decomposed_search_hits:
                 row_info['decomposed_justification'] = decomposed_search_hit['decomposed_justification']

@@ -31,19 +31,30 @@ def construct_prompt(claim, prompt_params=None):
 #Question: 
 #Justification: .'''.format(prompt_params['numbed_of_questions'], claim)
     
-    prompt = '''You are a fact-checker. Assume the following claim is false: "{}". 
-    What would be the {} most important yes or no types of questions to be asked to verify the claim is false?
-All questions need to have a "no" response if the claim is false. 
-Provide only the questions and their corresponding justification without any other text in the following format: 
-Question: 
-Justification: .'''.format(claim, prompt_params['numbed_of_questions'])
+    #prompt = '''You are a fact-checker. Assume the following claim is false: "{}". 
+    #What would be the {} most important yes or no types of questions to be asked to verify the claim is false?
+#All questions need to have a "no" response if the claim is false. 
+#Provide only the questions and their corresponding justification without any other text in the following format: 
+#Question: 
+#Justification: .'''.format(claim, prompt_params['numbed_of_questions'])
     
-    #prompt = '''You are a fact-checker. Assume the following claim is true: "{}". 
-    #What would be the {} most important yes or no types of questions to be asked to verify the claim is true?
-    #All questions need to have a yes response if the claim is true. 
-    #Provide only the questions and their corresponding justification without any other text in the following format: 
-    #Question: 
-    #Justification: .'''.format(claim, prompt_params['numbed_of_questions'])
+    prompt = '''You are a fact-checker. Assume the following claim is true: "{}". 
+    What would be the {} most important yes or no types of questions to be asked to verify the claim is true?
+    All questions need to have a "yes" response if the claim is true. 
+    Provide only the questions and their corresponding justification without any other text in the following format: 
+    Question: 
+    Justification: .'''.format(claim, prompt_params['numbed_of_questions'])
+
+    #Trying to not add bias towards true or false classification
+    prompt = '''You are a fact-checker. A claim is true when the statement is accurate. A claim is false when the statement is not accurate.
+    Assume the following claim: "{}". 
+    What would be the {} most important yes or no types of questions to be asked to verify the claim is true and the 
+    {} most important yes or no types of questions to be asked to verify the claim is false?
+    All questions need to have a "yes" response if the claim is true and a "no" answer if the claim is false. 
+    Return a single list of questions in the following format without any other text: 
+    Question: 
+    Justification:
+    The top five to verify the claim is true and the bottom five to verify the claim is false.'''.format(claim, int(prompt_params['numbed_of_questions']/2), int(prompt_params['numbed_of_questions']/2))
 
     return prompt
 
@@ -70,7 +81,7 @@ def format_response(res, questions, justifications):
                 q = q[3:]
                 if q[0]==" ":
                     q = q[1:]
-
+            '''
             # Do not add question or justifications that has wh-word or is duplicate
             #if not q.isspace() and not any(x in q.lower() for x in WH_MATCHES):
             if not q.isspace():
@@ -85,7 +96,7 @@ def format_response(res, questions, justifications):
                         is_added = False
                         break
             else:
-                is_added = False
+                is_added = False '''
 
             if is_added and not is_justification:
                 questions.append(q)
