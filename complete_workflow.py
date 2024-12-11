@@ -5,6 +5,8 @@ from collections import deque
 import time
 import claim_decomposer, web_search, justification_summarizer_approach1, justification_summarizer_approach2
 import justification_summaries_merger, justifications_classifier, evidence_based_article
+import pandas as pd
+from tqdm import tqdm
 
 
 # OpenAI API Key
@@ -32,46 +34,75 @@ usage_log = deque()
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("file_management.log"), logging.StreamHandler()]
+    handlers=[logging.FileHandler("workflow.log"), logging.StreamHandler()]
 )
 
 
 def main(args):
-    try:
-        args.output_path = args.decomposition_output_path
-        print('Start Ddecomposition!!!')
-        start_time = time.time()
-        run_start_time = time.time()
-        claim_decomposer.main(args)
-        print('Time to complete Decomposition (sec): {}'.format(str(time.time() - start_time)))
-        print('Decomposition Done!!!')
-        args.input_path = args.decomposition_output_path
-        args.output_path = args.web_search_output_path
-        start_time = time.time()
-        web_search.main(args)
-        print('Time to complete Web Search (sec): {}'.format(str(time.time() - start_time)))
-        print('All Web Search Done!!!')
-        args.input_path = args.web_search_output_path
-        args.output_path = args.justification_summarization_output_path
-        start_time = time.time()
-        justification_summarizer_approach2.main(args)
-        print('Time to complete Summarization (sec): {}'.format(str(time.time() - start_time)))
-        print('Justification Summarization Done!!!')
-        args.input_path = args.justification_summarization_output_path
-        args.output_path = args.justification_merger_output_path
-        start_time = time.time()
-        justification_summaries_merger.main(args)
-        print('Time to complete Summarization Merger (sec): {}'.format(str(time.time() - start_time)))
-        print('Justification Merging Done!!!')
-        args.input_path = args.justification_merger_output_path
-        args.output_path = args.classifier_output_path
-        start_time = time.time()
-        justifications_classifier.main(args)
-        print('Time to complete Classification (sec): {}'.format(str(time.time() - start_time)))
-        print('All Done!!!') 
-        print('Total Time to complete the Run (sec): {}'.format(str(time.time() - run_start_time)))
-    except Exception as e:
-        print("error caught", e)             
+    df = pd.read_json(args.input_path, lines=True)
+    start = 0 if not args.start else args.start
+    end = len(df) if not args.end else args.end
+    #Split dataset into four chunks of 20 claims for intermediate file saving
+    claims_chunk = 20
+    if df.shape[0]>=claims_chunk:
+        chunks = [df[i:i + claims_chunk] for i in range(start, end, claims_chunk)]
+    else:
+        chunks = df
+    args.start = 0
+    args.end = None
+    data_path = args.input_path.split('.jsonl')[0] + '_' + time.strftime("%Y%m%d-%H%M%S")
+    if not os.path.exists(data_path):
+        os.makedirs(data_path)
+    i = 0
+    run_start_time = time.time()
+    list_final_files_to_merge = []
+    for chunk in tqdm(chunks):
+        try:
+            args.input_path = data_path + '/' + 'chunk' + str(i) + '.jsonl'
+            list_final_files_to_merge.append(args.input_path)
+            chunk.to_json(args.input_path, orient='records', lines=True)
+            args.output_path = data_path + '/' + 'decomposed' + str(i) + '.jsonl'
+            print('Start Decomposition!!!')
+            start_time = time.time()
+            #claim_decomposer.main(args)
+            print('Time to complete Decomposition (sec): {}'.format(str(time.time() - start_time)))
+            print('Decomposition Done!!!')
+            args.input_path = args.output_path
+            args.output_path = data_path + '/' + 'websearch' + str(i) + '.jsonl'
+            start_time = time.time()
+            #web_search.main(args)
+            print('Time to complete Web Search (sec): {}'.format(str(time.time() - start_time)))
+            print('All Web Search Done!!!')
+            args.input_path = args.output_path
+            args.output_path = data_path + '/' + 'summary' + str(i) + '.jsonl'
+            start_time = time.time()
+            #justification_summarizer_approach2.main(args)
+            print('Time to complete Summarization (sec): {}'.format(str(time.time() - start_time)))
+            print('Justification Summarization Done!!!')
+            args.input_path = args.output_path
+            args.output_path = data_path + '/' + 'summarymerged' + str(i) + '.jsonl'
+            start_time = time.time()
+            #justification_summaries_merger.main(args)
+            print('Time to complete Summarization Merger (sec): {}'.format(str(time.time() - start_time)))
+            print('Justification Merging Done!!!')
+            args.input_path = args.output_path
+            args.output_path = data_path + '/' + 'classification' + str(i) + '.jsonl'
+            start_time = time.time()
+            #justifications_classifier.main(args)
+            print('Time to complete Classification (sec): {}'.format(str(time.time() - start_time)))
+            i = i + 1
+            #list_final_files_to_merge.append(args.output_path)
+        except Exception as e:
+            print("error caught", e)  
+            logging.info(f"Error: {e}")   
+            logging.info(f"Chunk: {i}") 
+        df_list = []
+    for final_file in list_final_files_to_merge:
+        df_list.append(pd.read_json(final_file, lines=True))
+    final_df = pd.concat(df_list, axis=0)
+    final_df.to_json(data_path + '/' + 'complete_workflow' + '.jsonl', orient='records', lines=True)
+    print('All Done!!!') 
+    print('Total Time to complete the Run (sec): {}'.format(str(time.time() - run_start_time)))
     
     
 
@@ -95,5 +126,6 @@ if __name__ == '__main__':
     parser.add_argument('--use_annotation', type=int, default=0, help="whether to use annotated questions on web search")
     parser.add_argument('--use_claim', type=int, default=0, help="whether to use claim as question on web search")
     parser.add_argument('--question_num', type=int, default=10, help="number of questions to use on web search")
+    parser.add_argument('--chunk_size', type=int, default=4, help="size of the chunk to parallel process on web search")
     args = parser.parse_args()
     main(args)
