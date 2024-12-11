@@ -59,39 +59,38 @@ def main(args):
     for chunk in tqdm(chunks):
         try:
             args.input_path = data_path + '/' + 'chunk' + str(i) + '.jsonl'
-            list_final_files_to_merge.append(args.input_path)
             chunk.to_json(args.input_path, orient='records', lines=True)
             args.output_path = data_path + '/' + 'decomposed' + str(i) + '.jsonl'
             print('Start Decomposition!!!')
             start_time = time.time()
-            #claim_decomposer.main(args)
+            claim_decomposer.main(args)
             print('Time to complete Decomposition (sec): {}'.format(str(time.time() - start_time)))
             print('Decomposition Done!!!')
             args.input_path = args.output_path
             args.output_path = data_path + '/' + 'websearch' + str(i) + '.jsonl'
             start_time = time.time()
-            #web_search.main(args)
+            web_search.main(args)
             print('Time to complete Web Search (sec): {}'.format(str(time.time() - start_time)))
             print('All Web Search Done!!!')
             args.input_path = args.output_path
             args.output_path = data_path + '/' + 'summary' + str(i) + '.jsonl'
             start_time = time.time()
-            #justification_summarizer_approach2.main(args)
+            justification_summarizer_approach2.main(args)
             print('Time to complete Summarization (sec): {}'.format(str(time.time() - start_time)))
             print('Justification Summarization Done!!!')
             args.input_path = args.output_path
             args.output_path = data_path + '/' + 'summarymerged' + str(i) + '.jsonl'
             start_time = time.time()
-            #justification_summaries_merger.main(args)
+            justification_summaries_merger.main(args)
             print('Time to complete Summarization Merger (sec): {}'.format(str(time.time() - start_time)))
             print('Justification Merging Done!!!')
             args.input_path = args.output_path
             args.output_path = data_path + '/' + 'classification' + str(i) + '.jsonl'
             start_time = time.time()
-            #justifications_classifier.main(args)
+            justifications_classifier.main(args)
             print('Time to complete Classification (sec): {}'.format(str(time.time() - start_time)))
             i = i + 1
-            #list_final_files_to_merge.append(args.output_path)
+            list_final_files_to_merge.append(args.output_path)
         except Exception as e:
             print("error caught", e)  
             logging.info(f"Error: {e}")   
