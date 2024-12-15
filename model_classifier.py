@@ -15,6 +15,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPClassifier
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.preprocessing import PolynomialFeatures, normalize
+from imblearn.over_sampling import SMOTE
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from catboost import CatBoostClassifier
@@ -22,12 +23,12 @@ from scipy.stats import randint, uniform
 
 CLASSIFIER = "logistic_regression"
 classifiers = {
-        "knn": (KNeighborsClassifier(), {"n_neighbors": [3, 5, 7, 9 , 10, 50, 100]}),
-        "naive_bayes": (GaussianNB(), {}),  # No hyperparameters to tune
-        "decision_tree": (DecisionTreeClassifier(), {"max_depth": [1, 3, 5, 10, 50, 150]}),
+        #"knn": (KNeighborsClassifier(), {"n_neighbors": [3, 5, 7, 9 , 10, 50, 100]}),
+        #"naive_bayes": (GaussianNB(), {}),  # No hyperparameters to tune
+        #"decision_tree": (DecisionTreeClassifier(), {"max_depth": [1, 3, 5, 10, 50, 150]}),
         #"svm": (SVC(), {"kernel": ["linear", "rbf", "poly"], "C": [0.1, 1, 5, 10, 100]}),
-        "logistic_regression": (LogisticRegression(max_iter=5000), {"C": [0.1, 1, 10, 100]}),
-        "random_forest": (RandomForestClassifier(random_state=42), {"n_estimators": [1, 2, 3, 5, 10, 50, 100], "max_depth": [1, 5, 10, 20, 50, 75]}),
+        #"logistic_regression": (LogisticRegression(max_iter=5000), {"C": [0.1, 1, 10, 100]}),
+        "random_forest": (RandomForestClassifier(random_state=42), {"n_estimators": [1, 10, 50, 100, 200, 500, 1000, 2000, 5000], "max_depth": [1, 5, 10, 20, 50, 75]}),
         #"xgboost": (XGBClassifier(use_label_encoder=False, eval_metric='mlogloss'), {"n_estimators": randint(10, 200), "max_depth": randint(3, 10), "learning_rate": uniform(0.01, 0.3)}),
         #"lightgbm": (LGBMClassifier(), {"n_estimators": randint(10, 200), "max_depth": randint(3, 10), "learning_rate": uniform(0.01, 0.3)}),
         #"catboost": (CatBoostClassifier(verbose=0), {"iterations": randint(10, 200), "depth": randint(3, 10), "learning_rate": uniform(0.01, 0.3)}),
@@ -88,6 +89,22 @@ def feature_engineering(df):
 
     return data
 
+#Balance dataset to get equal number of instances per class
+def balance_dataset(df, numb_questions = 10):
+    classes = df['label'].value_counts()
+    labels = list(classes.index)
+    instances = [classes.min()]*len(labels)
+    balanced_df = pd.DataFrame(columns=df.columns)
+    i = 0
+    while sum(instances) > 0:        
+        claim_questions = df.iloc[i*numb_questions:(i*numb_questions)+numb_questions]
+        label_index = labels.index(claim_questions.iloc[0]['label'])
+        if instances[label_index] > 0:
+            balanced_df = balanced_df.append(claim_questions)
+            instances[label_index] = instances[label_index] - 1
+        i = i + 1
+    return balanced_df
+
 def main(args):
     data_dir = os.path.dirname(args.input_path)    
     np.random.seed(42)
@@ -98,17 +115,25 @@ def main(args):
         
     
     # Preprocessing
+    #original_data = balance_dataset(original_data)
     original_data = construct_features(original_data)
     data = original_data.drop(['claim', 'label'], axis=1)
+    labels = original_data['label']
     data = feature_engineering(data)
+    data_scaled = data
 
+    #SMOTE (Synthetic Minority Oversampling Technique) to generate additional synthetic samples for underrepresented classes in dataset. 
+    #This will help balance the dataset and potentially improve classifier accuracy
+    smote = SMOTE(random_state=42)
+    data_scaled, labels = smote.fit_resample(data_scaled, labels)
     scaler = StandardScaler()
-    data_scaled = scaler.fit_transform(data)
-    #data_scaled = normalize(data_scaled)
+    data_scaled = scaler.fit_transform(data_scaled)
+    data_scaled = normalize(data_scaled)
+    
     
 
-    labels = soft_acc(original_data['label'])
-   # labels = original_data['label']
+    labels = soft_acc(labels)
+    #labels = original_data['label']
 
     all_classifiers = list(classifiers.keys())
     max_cv_scores = 0
