@@ -45,40 +45,6 @@ logging.basicConfig(
     handlers=[logging.FileHandler("justification summarizer.log"), logging.StreamHandler()]
 )
 
-# Format example for static prompt
-def construct_prompt(doc_text, prompt_params={}):
-    prompt = ''' Hypothesis: {}
-The following text may or may not provide evidence to the hypothesis. Summarize the text including only the passages that are relevant to confirm or deny the hypothesis.
-{}
-Return only the summary without any additional text.
-'''.format(prompt_params['decomposed_justification'], doc_text)
-    return prompt
-
-# Format example for static prompt
-def construct_mapreduce_prompt(decomposed_justification):
-    prompt = {}
-    hypotesis = "Hypothesis: " + decomposed_justification
-    map_prompt = hypotesis + """
-
-    You will be given text that may or may not provide evidence to the hypothesis. The text will be enclosed in triple triple backquotes (''').
-    Summarize the text including only the passages that are relevant to confirm or deny the hypothesis.
-    '''{text}'''
-    Return only the summary without any additional text.
-    """
-    map_prompt_template = PromptTemplate(template=map_prompt, input_variables=["text"])
-
-    combine_prompt = """
-    You will be given a series of summaries text. The text will be enclosed in triple backquotes (''')
-    Summarize the text without losing information.
-    '''{text}'''
-    Return only the summary without any additional text.
-    """
-    combine_prompt_template = PromptTemplate(template=combine_prompt, input_variables=["text"])
-
-    prompt['map_prompt'] = map_prompt_template
-    prompt['combine_prompt'] = combine_prompt_template
-    return prompt
-
 def main(args):
     '''In this approach the returned summaries is a merger of the top X docs returned from the semantic similarity against the justification. 
     This approach took 2h 23 mins and about $2,63 (GPT-4o-mini) for the 10 justifications and 10 URL docs per justification
@@ -98,7 +64,7 @@ def main(args):
             #prompt_params = {'decomposed_justification':decomposed_justification}
             # Summarizing based on the claim 
             decomposed_question = decomposed_search_hit['decomposed_question']
-            prompt_params = {'decomposed_justification':decomposed_question}
+            prompt_params = {'decomposed_justification':decomposed_search_hit['decomposed_question'], 'decomposed_justification':decomposed_search_hit['decomposed_justification']}
             j = 0
             start_time = time.time()
             #Summarize each url page content
@@ -107,7 +73,7 @@ def main(args):
                 numb_tokens = int(NUMB_WORDS_PER_DOC/0.75)  
                 numb_docs = int(NUMB_SIMILAR_WORDS_RETURNED/NUMB_WORDS_PER_DOC)  
                 try:           
-                    page_info['justification_summary']['output_text'] = Faiss_similarity_search(page_info['page_content'], args, max_prompt_tokens = numb_tokens, 
+                    page_info['justification_summary']['output_text'] = Faiss_similarity_search(page_info['page_content'], decomposed_question, args, max_prompt_tokens = numb_tokens, 
                                                             prompt_params=prompt_params, numb_similar_docs=numb_docs)
                 except Exception as e:
                     page_info['justification_summary']['output_text'] = ""

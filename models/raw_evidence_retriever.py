@@ -6,6 +6,10 @@ from htmldate import find_date
 import logging
 from bs4 import BeautifulSoup
 import mmPeriodicTimer as timeout_alarm
+from tavily import TavilyClient
+
+tavily_key = os.getenv("Tavily-Student-Key")
+tavily_client = TavilyClient(api_key=tavily_key)
 
 excluded_sites = ["politifact.com",
                   "factcheck.org",

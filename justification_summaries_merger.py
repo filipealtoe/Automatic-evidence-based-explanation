@@ -42,13 +42,13 @@ logging.basicConfig(
 )
 
 # Format example for static prompt
-def construct_mapreduce_prompt(decomposed_justification):
+def construct_mapreduce_prompt(prompt_params={}):
     prompt = {}
-    hypotesis = "Hypothesis: " + decomposed_justification
+    hypotesis = "Question: " + prompt_params['question']
     map_prompt = hypotesis + """
 
-    You will be given text that may or may not provide evidence to the hypothesis. The text will be enclosed in triple triple backquotes (''').
-    Summarize the text including only the passages that are relevant to confirm or deny the hypothesis.
+    You will be given text that may or may not answer the question above. The text will be enclosed in triple triple backquotes (''').
+    Summarize the text including only the passages that are relevant to the question.
     '''{text}'''
     Return only the summary without any additional text.
     """
@@ -98,56 +98,61 @@ def main(args):
     llm = ChatOpenAI(temperature = 0, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
     all_rows = []
     for i in tqdm(range(start, end)):
-        try:
-            decomposed_search_hits = df.iloc[i]['decomposed_search_hits']
-            row_info = {}            
-            j = 0
-            justification_summary_line = 0
-            for decomposed_search_hit in decomposed_search_hits:
-                row_info['decomposed_justification'] = decomposed_search_hit['decomposed_justification']
-                row_info['decomposed_question'] = decomposed_search_hit['decomposed_question']
-                row_info['justification_summary'] = None
-                row_info['summary_number_of_tokens'] = None
-                justifications = []
-                start_time = time.time()
-                justification_summary_line = len(all_rows)
-                k = 0
-                for page_info in decomposed_search_hit['pages_info']:
-                    row_info['page_url'] = page_info['page_url']  
-                    if 'output_text' in page_info['justification_summary']:                 
-                        row_info['page_justification_summary'] = page_info['justification_summary']['output_text']
-                    else:
-                        row_info['page_justification_summary'] = ''
-                    justifications.append(row_info['page_justification_summary'])
-                    row_info['number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])
-                    all_rows.append(row_info.copy())
-                    row_info['decomposed_justification'] = None
-                    row_info['decomposed_question'] = None 
-                    k = k + 1        
-                merged_justification = ''.join(justifications)
-                prompt_params = {'decomposed_justification':decomposed_search_hit['decomposed_justification'],
-                                 'question': decomposed_search_hit['decomposed_question']}
+        decomposed_search_hits = df.iloc[i]['decomposed_search_hits']
+        row_info = {}            
+        j = 0
+        justification_summary_line = 0
+        for decomposed_search_hit in decomposed_search_hits:
+            row_info['decomposed_justification'] = decomposed_search_hit['decomposed_justification']
+            row_info['decomposed_question'] = decomposed_search_hit['decomposed_question']
+            row_info['justification_summary'] = None
+            row_info['summary_number_of_tokens'] = None
+            justifications = []
+            start_time = time.time()
+            justification_summary_line = len(all_rows)
+            k = 0
+            for page_info in decomposed_search_hit['pages_info']:
+                row_info['page_url'] = page_info['page_url']  
+                if 'output_text' in page_info['justification_summary']:                 
+                    row_info['page_justification_summary'] = page_info['justification_summary']['output_text']
+                else:
+                    row_info['page_justification_summary'] = ''
+                justifications.append(row_info['page_justification_summary'])
+                row_info['number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])
+                all_rows.append(row_info.copy())
+                row_info['decomposed_justification'] = None
+                row_info['decomposed_question'] = None 
+                k = k + 1        
+            merged_justification = ''.join(justifications)
+            prompt_params = {'decomposed_justification':decomposed_search_hit['decomposed_justification'],
+                                'question': decomposed_search_hit['decomposed_question']}
+            try:
                 response = promptLLM(llm, func_prompts, merged_justification, start_time=start_time, prompt_params=prompt_params)
+            except Exception as e:
+                response_text = ""
+                print("error caught", e)
+                print('Dataset row = ', i)
+                print('Pages Info index = ', j)
+                print('Page index = ', k)
+                print('Decomposed Question: ', decomposed_search_hit['decomposed_question'])
+                print('Decomposed Justification: ', decomposed_search_hit['decomposed_justification'])          
+                print('Page name: ', page_info['page_name']) 
+                print('Page url: ', page_info['page_url'])
+                skip_response = 1
+            if not skip_response:
                 try:
                     response_text = response.content
                 except:
                     response_text = response['output_text']
-                #all_rows[j*len(justifications)]['justification_summary'] = response_text
-                #all_rows[j*len(justifications)]['summary_number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])     
-                all_rows[justification_summary_line]['justification_summary'] = response_text
-                all_rows[justification_summary_line]['summary_number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])           
-                justifications = []
-                decomposed_search_hit['decomposed_justification_explanation'] = response_text
-                j = j + 1
-        except Exception as e:
-            print("error caught", e)
-            print('Dataset row = ', i)
-            print('Pages Info index = ', j)
-            print('Page index = ', k)
-            print('Decomposed Question: ', decomposed_search_hit['decomposed_question'])
-            print('Decomposed Justification: ', decomposed_search_hit['decomposed_justification'])          
-            print('Page name: ', page_info['page_name']) 
-            print('Page url: ', page_info['page_url'])
+                skip_response = 0
+            #all_rows[j*len(justifications)]['justification_summary'] = response_text
+            #all_rows[j*len(justifications)]['summary_number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])     
+            all_rows[justification_summary_line]['justification_summary'] = response_text
+            all_rows[justification_summary_line]['summary_number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])           
+            justifications = []
+            decomposed_search_hit['decomposed_justification_explanation'] = response_text
+            j = j + 1
+        
     
     df.to_json(args.output_path, orient='records', lines=True)
     #Auxilary file to facilitate manual analysis

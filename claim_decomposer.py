@@ -1,7 +1,7 @@
 import argparse
 import os
 import re
-import openai
+from datetime import datetime, timedelta
 import pandas as pd
 import time
 from tqdm import tqdm
@@ -14,6 +14,35 @@ api_key = os.getenv("OPENAI_API_KEY")
 WH_MATCHES = ("why", "who", "which", "what", "where", "when", "how")
 
 NUMBERS = ("1.", "2.", "3.", "4.", "5.", "6.", "7.", "8.", "9.", "10.")
+
+REGEX = "(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?" \
+            "|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?" \
+            "|Dec(?:ember)?)\s+(\d{1,2}),?\s+(\d{4})"
+
+MONTH_MAPPING = {"Jan": "01",
+                 "January": "01",
+                 "Feb": "02",
+                 "February": "02",
+                 "Mar": "03",
+                 "March": "03",
+                 "Apr": "04",
+                 "April": "04",
+                 "May": "05",
+                 "Jun": "06",
+                 "June": "06",
+                 "Jul": "07",
+                 "July": "07",
+                 "Aug": "08",
+                 "August": "08",
+                 "Sep": "09",
+                 "September": "09",
+                 "Oct": "10",
+                 "October": "10",
+                 "Nov": "11",
+                 "November": "11",
+                 "Dec": "12",
+                 "December": "12"
+                 }
 
 # OpenAI Engine, feel free to change
 ENGINE = 'gpt-4o'
@@ -45,20 +74,46 @@ def construct_prompt(claim, prompt_params=None):
     Question: 
     Justification: .'''.format(claim, prompt_params['numbed_of_questions'])
 
-    #Trying to not add bias towards true or false classification
-    prompt = '''You are a fact-checker. A claim is true when the statement is accurate. A claim is false when the statement is not accurate.
-    Assume the following claim: "{}". 
-    What would be the {} most important yes or no types of questions to be asked to verify the claim is true and the 
-    {} most important yes or no types of questions to be asked to verify the claim is false?
+    #Improved Prompt using timeframe of claim
+    prompt = ''' You are a fact-checker. A claim is true when the statement is accurate. A claim is false when the statement is not accurate.
+    The following claim was published on {}: "{}"  
+    Assume you will do a web search to verify the claim. What would be the {} most important yes or no questions to feed a web browser to verify the claim is true and the {} most important questions to verify the claim is false? 
     All questions need to have a "yes" response if the claim is true and a "no" answer if the claim is false. 
     Return a single list of questions in the following format without any other text: 
     Question: 
     Justification:
-    The top five to verify the claim is true and the bottom five to verify the claim is false.'''.format(claim, int(prompt_params['numbed_of_questions']/2), int(prompt_params['numbed_of_questions']/2))
+    The top five to verify the claim is true and the bottom five to verify the claim is false.'''.format(prompt_params['claim_date'], claim, int(prompt_params['numbed_of_questions']/2), int(prompt_params['numbed_of_questions']/2))
+
+    #Trying to not add bias towards true or false classification
+    prompt = '''You are a fact-checker. A claim is true when the statement is accurate. A claim is false when the statement is not accurate.
+    The following claim was published on {}: "{}" 
+    Assume you will do a web search to verify the claim. What would be the {} most important yes or no types of questions to feed a web browser to verify the claim is true and the 
+    {} most important yes or no types of questions to feed a web browser to verify the claim is false?
+    The two sets of 5 questions must explore different aspects of the claim. 
+    Return a single list of questions in the following format without any other text: 
+    Question: 
+    Justification:
+    The top five to verify the claim is true and the bottom five to verify the claim is false.'''.format(prompt_params['claim_date'],claim, int(prompt_params['numbed_of_questions']/2), int(prompt_params['numbed_of_questions']/2))
 
     return prompt
 
 func_prompts = [construct_prompt]
+
+def extract_claim_date(claim_context, time_offset):
+    res = re.findall(REGEX, claim_context)
+    if res:
+        month, day, year = res[0]
+        if int(day) < 10:
+            day = '0' + day
+        date_str = "{}-{}-{}".format(year, MONTH_MAPPING[month], day)
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        # add offset to the date so that we can experiment with different time constraints
+        new_date = date_obj + timedelta(days=time_offset)
+        # format the new date as "YYYY-MM-DD"
+        new_date_str = new_date.strftime("%Y-%m-%d")
+        return new_date_str
+    else:
+        return None
 
 # Generate sub-questions and apply filtering 
 def format_response(res, questions, justifications):
@@ -113,7 +168,7 @@ def main(args):
     df["justifications"] = ""
     start = 0 if not args.start else args.start
     end = len(df) if not args.end else args.end
-    llm = ChatOpenAI(temperature = 0, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
+    llm = ChatOpenAI(temperature = 0.7, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
     start_time = time.time()
     for i in tqdm(range(start, end)):
         try:
@@ -121,7 +176,9 @@ def main(args):
             llm_called = 0
             questions = []
             justifications = []
-            response = promptLLM(llm, func_prompts, claim, start_time=start_time, prompt_params={'numbed_of_questions':MAX_NUM_QUESTIONS})
+            when_where = df.iloc[i]['venue']
+            prompt_params={'numbed_of_questions':MAX_NUM_QUESTIONS, 'claim_date': extract_claim_date(when_where, args.time_offset)}
+            response = promptLLM(llm, func_prompts, claim, start_time=start_time, prompt_params=prompt_params)
             questions, justifications = format_response(response.content, questions, justifications)
             df.at[i, 'claim questions'] = questions
             df.at[i, 'justifications'] = justifications
@@ -139,5 +196,6 @@ if __name__ == '__main__':
     parser.add_argument('--output_path', type=str, default=None)
     parser.add_argument('--start', type=int, default=None)
     parser.add_argument('--end', type=int, default=None)
+    parser.add_argument('--time_offset', type=int, default=1, help="add an offest to the time at which the claim was made")
     args = parser.parse_args()
     main(args)

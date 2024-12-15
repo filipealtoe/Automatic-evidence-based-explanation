@@ -2,9 +2,10 @@ import argparse
 import os
 import logging
 from collections import deque
+import pathlib
 import time
 import claim_decomposer, web_search, justification_summarizer_approach1, justification_summarizer_approach2
-import justification_summaries_merger, justifications_classifier, evidence_based_article
+import justification_summaries_merger, justifications_classifier, evidence_based_article, tavily_search
 import pandas as pd
 from tqdm import tqdm
 
@@ -37,6 +38,17 @@ logging.basicConfig(
     handlers=[logging.FileHandler("workflow.log"), logging.StreamHandler()]
 )
 
+def merge_chunked_files(files_dir, consolidated_file_name, files_extension='.csv'):
+    #df=pd.DataFrame()
+    all_dfs = []
+    for file in os.listdir(files_dir):
+        if file.endswith(files_extension):
+            aux=pd.read_csv(os.path.join(files_dir, file), encoding='utf-8', sep='\t', header=0)
+            all_dfs.append(aux)
+    df = pd.concat(all_dfs, axis=0)
+    df.to_csv(os.path.join(files_dir, consolidated_file_name), sep ='\t', header=True, index=False, encoding='utf-8')
+    
+
 
 def main(args):
     df = pd.read_json(args.input_path, lines=True)
@@ -47,10 +59,11 @@ def main(args):
     if df.shape[0]>=claims_chunk:
         chunks = [df[i:i + claims_chunk] for i in range(start, end, claims_chunk)]
     else:
-        chunks = df
+        chunks = [df[start:end]]
     args.start = 0
     args.end = None
     data_path = args.input_path.split('.jsonl')[0] + '_' + time.strftime("%Y%m%d-%H%M%S")
+    merge_chunked_files(data_path,"all_classified.csv")
     if not os.path.exists(data_path):
         os.makedirs(data_path)
     i = 0
@@ -69,21 +82,26 @@ def main(args):
             args.input_path = args.output_path
             args.output_path = data_path + '/' + 'websearch' + str(i) + '.jsonl'
             start_time = time.time()
-            web_search.main(args)
-            print('Time to complete Web Search (sec): {}'.format(str(time.time() - start_time)))
-            print('All Web Search Done!!!')
-            args.input_path = args.output_path
-            args.output_path = data_path + '/' + 'summary' + str(i) + '.jsonl'
-            start_time = time.time()
-            justification_summarizer_approach2.main(args)
-            print('Time to complete Summarization (sec): {}'.format(str(time.time() - start_time)))
-            print('Justification Summarization Done!!!')
-            args.input_path = args.output_path
-            args.output_path = data_path + '/' + 'summarymerged' + str(i) + '.jsonl'
-            start_time = time.time()
-            justification_summaries_merger.main(args)
-            print('Time to complete Summarization Merger (sec): {}'.format(str(time.time() - start_time)))
-            print('Justification Merging Done!!!')
+            if not args.use_Tavily_search:                
+                web_search.main(args)
+                print('Time to complete Web Search (sec): {}'.format(str(time.time() - start_time)))
+                print('All Web Search Done!!!')
+                args.input_path = args.output_path
+                args.output_path = data_path + '/' + 'summary' + str(i) + '.jsonl'
+                start_time = time.time()
+                justification_summarizer_approach2.main(args)
+                print('Time to complete Summarization (sec): {}'.format(str(time.time() - start_time)))
+                print('Justification Summarization Done!!!')
+                args.input_path = args.output_path
+                args.output_path = data_path + '/' + 'summarymerged' + str(i) + '.jsonl'
+                start_time = time.time()
+                justification_summaries_merger.main(args)
+                print('Time to complete Summarization Merger (sec): {}'.format(str(time.time() - start_time)))
+                print('Justification Merging Done!!!')
+            else:
+                tavily_search.main(args)
+                print('Time to complete Web Search (sec): {}'.format(str(time.time() - start_time)))
+                print('All Web Search Done!!!')
             args.input_path = args.output_path
             args.output_path = data_path + '/' + 'classification' + str(i) + '.jsonl'
             start_time = time.time()
@@ -100,6 +118,7 @@ def main(args):
         df_list.append(pd.read_json(final_file, lines=True))
     final_df = pd.concat(df_list, axis=0)
     final_df.to_json(data_path + '/' + 'complete_workflow' + '.jsonl', orient='records', lines=True)
+    merge_chunked_files(data_path,"all_classified.csv")
     print('All Done!!!') 
     print('Total Time to complete the Run (sec): {}'.format(str(time.time() - run_start_time)))
     
@@ -125,6 +144,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_annotation', type=int, default=0, help="whether to use annotated questions on web search")
     parser.add_argument('--use_claim', type=int, default=0, help="whether to use claim as question on web search")
     parser.add_argument('--question_num', type=int, default=10, help="number of questions to use on web search")
+    parser.add_argument('--use_Tavily_search', type=int, default=0, help="whether to use the Tavily intelligent search service or manual search")
     parser.add_argument('--chunk_size', type=int, default=4, help="size of the chunk to parallel process on web search")
     args = parser.parse_args()
     main(args)

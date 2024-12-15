@@ -28,6 +28,7 @@ api_key = os.getenv("OPENAI_API_KEY")
 
 # OpenAI Engine, feel free to change
 ENGINE = 'gpt-4o-mini'
+EMBEDDINGS_MODEL = "text-embedding-3-large"
 # Max number of LLM retries
 MAX_GPT_CALLS = 5
 
@@ -60,8 +61,9 @@ def semantic_similarity_search(scrapped_text, args, max_prompt_tokens = 4000, pr
     raw_documents = TextLoader(temp_file_path, encoding='UTF-8').load()
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=int(max_prompt_tokens/0.75), chunk_overlap=0)
     documents = text_splitter.split_documents(raw_documents)
-    db = Chroma.from_documents(documents, OpenAIEmbeddings())
-    embedding_vector = OpenAIEmbeddings().embed_query(prompt_params['decomposed_justification'])
+    embeddings = OpenAIEmbeddings(model=EMBEDDINGS_MODEL)
+    db = Chroma.from_documents(documents, embeddings)
+    embedding_vector = embeddings.embed_query(prompt_params['decomposed_justification'])
     #Return the top 20 most similar documents
     docs = db.similarity_search_by_vector(embedding_vector, k=numb_similar_docs)
     response = ''
@@ -70,17 +72,18 @@ def semantic_similarity_search(scrapped_text, args, max_prompt_tokens = 4000, pr
     os.remove(temp_file_path)
     return response
 
-def Faiss_similarity_search(scrapped_text, args, max_prompt_tokens = 4000, prompt_params=None, numb_similar_docs=20):
+def Faiss_similarity_search(scrapped_text, statement_to_compare, args, max_prompt_tokens = 4000, prompt_params=None, numb_similar_docs=20):
     temp_file_path  = args.input_path.split('.jsonl')[0] + '.txt'
     with open(temp_file_path, 'w', encoding="utf-8") as text_file:
         text_file.write(scrapped_text)
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+    embeddings = OpenAIEmbeddings(model=EMBEDDINGS_MODEL)
     # Load the document, split it into chunks, embed each chunk and load it into the vector store.
     raw_documents = TextLoader(temp_file_path, encoding='UTF-8').load()
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=int(max_prompt_tokens/0.75), chunk_overlap=0)
     documents = text_splitter.split_documents(raw_documents)
     #db = Chroma.from_documents(documents, embeddings)
-    embedding_vector = embeddings.embed_query(prompt_params['decomposed_justification'])
+    #embedding_vector = embeddings.embed_query(prompt_params['decomposed_justification'])
+    embedding_vector = embeddings.embed_query(statement_to_compare)
     index = faiss.IndexFlatL2(len(embedding_vector))
     vector_store = FAISS(
     embedding_function=embeddings,
@@ -126,7 +129,7 @@ def promptLLM(llm, prompt_funcs, scraped_text, start_time, max_prompt_tokens = 4
             response = llm.invoke(prompt)
     else:
         index = func_names.index('construct_mapreduce_prompt')
-        prompt = prompt_funcs[index](prompt_params['decomposed_justification'])
+        prompt = prompt_funcs[index](prompt_params)
         summary_chain = load_summarize_chain(llm=llm,
                                     chain_type='map_reduce',
                                     map_prompt=prompt['map_prompt'],
@@ -166,7 +169,8 @@ def main(args):
             decomposed_search_hits = df.iloc[i]['decomposed_search_hits']
             for decomposed_search_hit in decomposed_search_hits:
                 decomposed_justification = decomposed_search_hit['decomposed_justification']
-                prompt_params={'decomposed_justification':decomposed_justification}
+                decomposed_question = decomposed_search_hit['decomposed_question']
+                prompt_params={'decomposed_justification':decomposed_justification, 'decomposed_question':decomposed_question}
                 j = 0
                 start_time = time.time()
                 #Summarize each url page content
