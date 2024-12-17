@@ -138,7 +138,11 @@ def inference(args, labels, data, used_three_classes):
     best_classifier = None
     grid_search = None
     model_params = [best_classifier, grid_search]
-    load_saved_model(args.multi_classifier_path, model_params, metric={'accuracy':None})
+    if args.model_type == 'multiclassifier_except_True' or args.model_type == 'multiclassifier':
+        model_file = args.multi_classifier_path
+    elif args.model_type == 'binary_classifier': 
+        model_file = args.binary_classifier_path
+    load_saved_model(model_file, model_params, metric={'accuracy':None})
     predicted_labels = model_params[0].predict(data)
     display_labels = ['barely-true','false','half-true', 'mostly-true', 'true']
     #If original six classes were used calculate soft accuracy
@@ -155,19 +159,12 @@ def inference(args, labels, data, used_three_classes):
     #disp.plot()
 
 def data_preprocessing(original_data, args):
-    #testing merging pant-fire and false
-    original_data.loc[original_data.label=='pants-fire', ['label']] = 'false'
-    
-
+    #Merging pant-fire and false
+    original_data.loc[original_data.label=='pants-fire', ['label']] = 'false'  
     original_data = construct_features(original_data)
     #Dropping trues
-    if not args.binary_classification:
+    if args.model_type == 'multiclassifier_except_True':
         original_data = original_data.drop(original_data[original_data['label']=='true'].index)
-
-    #Keeping only trues
-    #original_data = original_data.drop(original_data[original_data['label']!='true'].index)
-    
-   
 
     data = original_data.drop(['claim', 'label'], axis=1)
     labels = original_data['label']
@@ -192,12 +189,8 @@ def data_preprocessing(original_data, args):
     scaler = StandardScaler()
     data_scaled = scaler.fit_transform(data_scaled)
     data_scaled = normalize(data_scaled) 
-    
-    #Three classes, False, True and Uncertain
-    if args.three_classes:
-        labels, used_three_classes = three_classes(labels)
-    
-    if args.binary_classification:
+   
+    if args.model_type == 'binary_classifier':
         labels[labels!='true'] = 'untrue'
     return data_scaled, labels
 
@@ -208,8 +201,7 @@ def main(args):
     if(len(args.input_path.split('.csv'))>0):
         original_data = pd.read_csv(args.input_path,delimiter='\t', encoding="utf_8", on_bad_lines='skip')
     else:
-        original_data = pd.read_json(args.input_path, lines=True)   
-    
+        original_data = pd.read_json(args.input_path, lines=True)       
     
     data_scaled, labels = data_preprocessing(original_data, args)
 
@@ -255,8 +247,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_path', type=str, default=None)
     parser.add_argument('--multi_classifier_path', type=str, default=None)
+    parser.add_argument('--binary_classifier_path', type=str, default=None)
+    parser.add_argument('--model_type', type=str, default=None)
     parser.add_argument('--inference', type=int, default=0)
     parser.add_argument('--three_classes', type=int, default=0)
-    parser.add_argument('--binary_classification', type=int, default=0)
+    #parser.add_argument('--binary_classification', type=int, default=0)
     args = parser.parse_args()
     main(args)
