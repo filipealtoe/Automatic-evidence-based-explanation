@@ -154,15 +154,7 @@ def inference(args, labels, data, used_three_classes):
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=display_labels)
     #disp.plot()
 
-def main(args):
-    used_three_classes = False
-    data_dir = os.path.dirname(args.input_path)   
-    np.random.seed(42)
-    if(len(args.input_path.split('.csv'))>0):
-        original_data = pd.read_csv(args.input_path,delimiter='\t', encoding="utf_8", on_bad_lines='skip')
-    else:
-        original_data = pd.read_json(args.input_path, lines=True)   
-    
+def data_preprocessing(original_data, args):
     #testing merging pant-fire and false
     original_data.loc[original_data.label=='pants-fire', ['label']] = 'false'
     
@@ -207,7 +199,19 @@ def main(args):
     
     if args.binary_classification:
         labels[labels!='true'] = 'untrue'
- 
+    return data_scaled, labels
+
+def main(args):
+    used_three_classes = False
+    data_dir = os.path.dirname(args.input_path)   
+    np.random.seed(42)
+    if(len(args.input_path.split('.csv'))>0):
+        original_data = pd.read_csv(args.input_path,delimiter='\t', encoding="utf_8", on_bad_lines='skip')
+    else:
+        original_data = pd.read_json(args.input_path, lines=True)   
+    
+    
+    data_scaled, labels = data_preprocessing(original_data, args)
 
     if not args.inference:
         all_classifiers = list(classifiers.keys())
