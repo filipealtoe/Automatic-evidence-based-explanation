@@ -169,7 +169,8 @@ def main(args):
 
     original_data = construct_features(original_data)
     #Dropping trues
-    original_data = original_data.drop(original_data[original_data['label']=='true'].index)
+    if not args.binary_classification:
+        original_data = original_data.drop(original_data[original_data['label']=='true'].index)
 
     #Keeping only trues
     #original_data = original_data.drop(original_data[original_data['label']!='true'].index)
