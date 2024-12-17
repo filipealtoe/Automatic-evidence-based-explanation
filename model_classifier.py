@@ -17,6 +17,7 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.preprocessing import PolynomialFeatures, normalize
 from sklearn.metrics import classification_report, accuracy_score
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from imblearn.over_sampling import SMOTE
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
@@ -30,7 +31,7 @@ classifiers = {
         "decision_tree": (DecisionTreeClassifier(), {"max_depth": [1, 3, 5, 10, 50, 150]}),
         "svm": (SVC(), {"kernel": ["linear", "rbf", "poly"], "C": [0.1, 1, 5, 10, 100]}),
         "logistic_regression": (LogisticRegression(max_iter=5000), {"C": [0.1, 1, 10, 100]}),
-        "random_forest": (RandomForestClassifier(random_state=42), {"n_estimators": [1, 10, 50, 100, 200, 500, 1000, 2000, 2500, 2800], "max_depth": [1, 5, 10, 20, 50, 75]}),
+        #"random_forest": (RandomForestClassifier(random_state=42), {"n_estimators": [1, 10, 50, 100, 200, 500, 1000, 2000, 2500, 2800], "max_depth": [1, 5, 10, 20, 50, 75]}),
         #"random_forest": (RandomForestClassifier(random_state=42), {"n_estimators": [2000], "max_depth": [10]}),
         #"neural_network": (MLPClassifier(max_iter=5000, random_state=42), {"hidden_layer_sizes": [(75,), (100,), (125,), (150,)], "activation": ["relu"], "alpha": [0.000025, 0.000075,0.0001]})
         #"xgboost": (XGBClassifier(use_label_encoder=False, eval_metric='mlogloss'), {"n_estimators": randint(10, 200), "max_depth": randint(3, 10), "learning_rate": uniform(0.01, 0.3)}),
@@ -54,6 +55,10 @@ def three_classes(labels):
     labels[labels=='barely-true'] = 'undefined'
     labels[labels=='half-true'] = 'undefined'
     labels[labels=='pants-fire'] = 'false'
+    return (labels, True)
+
+def binary_classes(labels):
+    labels[labels!='true'] = 'untrue'
     return (labels, True)
 
 def construct_features(df, numb_questions=10):
@@ -124,7 +129,7 @@ def inference_soft_acc(labels, predicted_labels):
     i = 0
     for result in results:
         if abs(result) <= 1:
-            predicted_labels[i] = labels[i]
+            predicted_labels[i] = labels.iloc[i]
         i = i + 1
 
     return predicted_labels
@@ -133,8 +138,9 @@ def inference(args, labels, data, used_three_classes):
     best_classifier = None
     grid_search = None
     model_params = [best_classifier, grid_search]
-    load_saved_model(args.classifier_path, model_params, metric={'accuracy':None})
+    load_saved_model(args.multi_classifier_path, model_params, metric={'accuracy':None})
     predicted_labels = model_params[0].predict(data)
+    display_labels = ['barely-true','false','half-true', 'mostly-true', 'true']
     #If original six classes were used calculate soft accuracy
     if not used_three_classes:
         predicted_labels = inference_soft_acc(labels, predicted_labels)
@@ -144,6 +150,9 @@ def inference(args, labels, data, used_three_classes):
     # Generate a detailed classification report
     report = classification_report(labels, predicted_labels)
     print("Classification Report:\n", report)
+    cm = confusion_matrix(labels, predicted_labels)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=display_labels)
+    #disp.plot()
 
 def main(args):
     used_three_classes = False
@@ -154,25 +163,37 @@ def main(args):
     else:
         original_data = pd.read_json(args.input_path, lines=True)   
     
-    # Preprocessing
+    #testing merging pant-fire and false
+    original_data.loc[original_data.label=='pants-fire', ['label']] = 'false'
+    
+
     original_data = construct_features(original_data)
+    #Dropping trues
+    original_data = original_data.drop(original_data[original_data['label']=='true'].index)
+
+    #Keeping only trues
+    #original_data = original_data.drop(original_data[original_data['label']!='true'].index)
+    
+   
+
     data = original_data.drop(['claim', 'label'], axis=1)
     labels = original_data['label']
     data = feature_engineering(data)
     data_scaled = data
-    #if not args.inference:
     #SMOTE (Synthetic Minority Oversampling Technique) to generate additional synthetic samples for underrepresented classes in dataset. 
     #This will help balance the dataset and potentially improve classifier accuracy
     #Only oversample if is running training
-    smote = SMOTE(random_state=42)
-    data_scaled, labels = smote.fit_resample(data_scaled, labels)
+    if True:
+        if not args.inference:
+            smote = SMOTE(sampling_strategy='minority',random_state=42)
+            #smote = SMOTE(sampling_strategy={'true': 90}, random_state=42)
+            data_scaled, labels = smote.fit_resample(data_scaled, labels)
 
     data_scaled['label'] = labels
     #Shuffle expanded dataset
     if not args.inference:
         indices = np.random.permutation(len(data_scaled))
         data_scaled = data_scaled.iloc[indices]
-    #data_scaled = data_scaled.sample(frac=1).reset_index(drop=True)
     labels = data_scaled['label']
     data_scaled = data_scaled.drop(['label'], axis=1)    
     scaler = StandardScaler()
@@ -182,6 +203,9 @@ def main(args):
     #Three classes, False, True and Uncertain
     if args.three_classes:
         labels, used_three_classes = three_classes(labels)
+    
+    if args.binary_classification:
+        labels[labels!='true'] = 'untrue'
  
 
     if not args.inference:
@@ -225,8 +249,9 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_path', type=str, default=None)
-    parser.add_argument('--classifier_path', type=str, default=None)
+    parser.add_argument('--multi_classifier_path', type=str, default=None)
     parser.add_argument('--inference', type=int, default=0)
     parser.add_argument('--three_classes', type=int, default=0)
+    parser.add_argument('--binary_classification', type=int, default=0)
     args = parser.parse_args()
     main(args)

@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 # OpenAI API Key
 #openai.api_key = os.getenv("OPENAI_API_KEY")
-api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("OPENAI_API_KEY_CIMPLE")
 
 # OpenAI Engine, feel free to change
 ENGINE = 'gpt-4o'
@@ -63,9 +63,10 @@ def main(args):
     args.start = 0
     args.end = None
     data_path = args.input_path.split('.jsonl')[0] + '_' + time.strftime("%Y%m%d-%H%M%S")
-    merge_chunked_files(data_path,"all_classified.csv")
     if not os.path.exists(data_path):
         os.makedirs(data_path)
+        ####DELETE
+    #merge_chunked_files(data_path,"all_classified.csv")
     i = 0
     run_start_time = time.time()
     list_final_files_to_merge = []
