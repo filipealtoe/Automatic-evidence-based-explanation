@@ -136,40 +136,53 @@ def feature_engineering(data, args):
     
     return data
 
+def two_stage_classifier(data, labels, model_paths):
+    best_classifier = None
+    grid_search = None
+    model_params = [best_classifier, grid_search]
+    #Run binary classification first
+    load_saved_model(model_paths['binary_classifier_path'], model_params, metric={'accuracy':None})
+    #binary_predictions = model_params[0].predict(data)
+    #Tunned probability thresholds for true class to avoid false positive classification
+    y_probs = model_params[0].predict_proba(data)
+    threshold = 0.695 
+    binary_predictions = (y_probs[:, 1] >= threshold).astype(int)
+    #Load multi-classifier model
+    load_saved_model(model_paths['multi_classifier_path'], model_params, metric={'accuracy':None})
+    predicted_labels = []
+    i = 0
+    for pred in binary_predictions:
+        if pred == 1: #If binary prediction got it right
+            predicted_labels.append(labels.iloc[i])#(binary_class)
+        else: #Run multi-class model
+            multi_class_pred = model_params[0].predict(data[i].reshape(1, -1))
+            #multi_class_pred = inference_soft_acc(multi_class_pred, [labels.iloc[i]])
+            predicted_labels.append(multi_class_pred[0])
+        i = i + 1
+    predicted_labels = inference_soft_acc(labels, predicted_labels)
+    return predicted_labels
+
+def voting_heuristic(model1_labels, model2_labels, model1_winning_classes = ['true'], model2_winning_classes = ['false', 'half-true']):
+    predicted_labels = model1_labels.copy()
+    for i in range(0,len(model1_labels)):
+        if model1_labels[i] in model2_winning_classes:
+            predicted_labels[i] = model2_labels[i]
+    return predicted_labels
+
 def inference(original_data, args, binary_class = 'true'):
     binary_class = args.binary_classes.split(',')[0]
     data, labels = data_preprocessing(original_data, args)
     best_classifier = None
     grid_search = None
     model_params = [best_classifier, grid_search]    
-    if args.model_type == 'two_step_model':
-        #Run binary classification first
-        load_saved_model(args.binary_classifier_path, model_params, metric={'accuracy':None})
-        #binary_predictions = model_params[0].predict(data)
-        #Tunned probability thresholds for true class to avoid false positive classification
-        y_probs = model_params[0].predict_proba(data)
-        threshold = 0.695 
-        binary_predictions = (y_probs[:, 1] >= threshold).astype(int)
-        #Load multi-classifier model
-        load_saved_model(args.multi_classifier_path, model_params, metric={'accuracy':None})
-        '''
-        model_classes = list(model_params[0].classes_)
-        if len(model_classes)<5:
-            model_classes.append(binary_class)
-        '''
+    if args.model_type == 'two_step_model' or args.model_type == 'voting_model':
         model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'true']
-        predicted_labels = []
-        i = 0
-        for pred in binary_predictions:
-            if pred == 1: #If binary prediction got it right
-                predicted_labels.append(labels.iloc[i])#(binary_class)
-            else: #Run multi-class model
-                multi_class_pred = model_params[0].predict(data[i].reshape(1, -1))
-                #multi_class_pred = inference_soft_acc(multi_class_pred, [labels.iloc[i]])
-                predicted_labels.append(multi_class_pred[0])
-            i = i + 1
-        predicted_labels = inference_soft_acc(labels, predicted_labels)
-                
+        model_paths = {'binary_classifier_path':args.binary_classifier_path, 'multi_classifier_path':args.multi_classifier_path}
+        model1_predicted_labels = two_stage_classifier(data, labels, model_paths)
+        if args.model_type == 'voting_model':
+            model_paths = {'binary_classifier_path':args.second_binary_classifier_path, 'multi_classifier_path':args.multi_classifier_path}
+            model2_predicted_labels = two_stage_classifier(data, labels, model_paths)
+            predicted_labels = voting_heuristic(model1_predicted_labels, model2_predicted_labels)
     else:
         if args.model_type == 'multiclassifier_except_oneclass' or args.model_type == 'regular_multiclassifier':
             model_file = args.multi_classifier_path
@@ -199,25 +212,6 @@ def inference(original_data, args, binary_class = 'true'):
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=model_classes)
     disp.plot()
     return
-'''
-def feature_visualization(data):
-    # Perform PCA for dimensionality reduction
-    pca = PCA(n_components=2)
-    data_2d = pca.fit_transform(data_resampled)
-
-    # Plot problematic class and confused class
-    problematic_class_label = 4
-    confused_class_label = 1
-
-    problematic_data = data_2d[labels_resampled == problematic_class_label]
-    confused_data = data_2d[labels_resampled == confused_class_label]
-
-    plt.scatter(problematic_data[:, 0], problematic_data[:, 1], label="Problematic Class", alpha=0.7)
-    plt.scatter(confused_data[:, 0], confused_data[:, 1], label="Confused Class", alpha=0.7)
-    plt.legend()
-    plt.title("Visualization of Problematic and Confused Classes")
-    plt.show()
-'''
 
 def training(original_data, args):
     data_scaled, labels = data_preprocessing(original_data, args)
@@ -324,7 +318,9 @@ if __name__ == '__main__':
     parser.add_argument('--test_file_path', type=str, default=None)
     parser.add_argument('--multi_classifier_path', type=str, default=None)
     parser.add_argument('--binary_classifier_path', type=str, default=None)
+    parser.add_argument('--second_binary_classifier_path', type=str, default=None)
     parser.add_argument('--binary_classes', type=str, default=None)
+    parser.add_argument('--second_binary_classes', type=str, default=None)
     parser.add_argument('--model_type', type=str, default=None, help="Supported options:binary_classifier, regular_multiclassifier, multiclassifier_except_oneclass, two_step_model")
     parser.add_argument('--inference', type=int, default=0)
     parser.add_argument('--three_classes', type=int, default=0)
