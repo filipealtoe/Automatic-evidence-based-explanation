@@ -14,6 +14,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPClassifier
+from sklearn.multiclass import OneVsOneClassifier
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.preprocessing import PolynomialFeatures, normalize
 from sklearn.metrics import classification_report, accuracy_score
@@ -31,9 +32,10 @@ classifiers = {
         "decision_tree": (DecisionTreeClassifier(), {"max_depth": [1, 3, 5, 10, 50, 150]}),
         "svm": (SVC(), {"kernel": ["linear", "rbf", "poly"], "C": [0.1, 1, 5, 10, 100]}),
         "logistic_regression": (LogisticRegression(max_iter=5000), {"C": [0.1, 1, 10, 100]}),
+        #"one_versus_one": (OneVsOneClassifier(RandomForestClassifier(random_state=42)), {'estimator__n_estimators': [50, 100, 200],'estimator__max_depth': [None, 10, 20], 'estimator__min_samples_split': [2, 5, 10],'estimator__min_samples_leaf': [1, 2, 4],'estimator__max_features': ['sqrt', 'log2']}),
         #"random_forest": (RandomForestClassifier(random_state=42), {"n_estimators": [1, 10, 50, 100, 200, 500, 1000, 2000, 2500, 2800], "max_depth": [1, 5, 10, 20, 50, 75]}),
         #"random_forest": (RandomForestClassifier(random_state=42), {"n_estimators": [2000], "max_depth": [10]}),
-        #"neural_network": (MLPClassifier(max_iter=5000, random_state=42), {"hidden_layer_sizes": [(75,), (100,), (125,), (150,)], "activation": ["relu"], "alpha": [0.000025, 0.000075,0.0001]})
+        #"neural_network": (MLPClassifier(max_iter=5000, random_state=42), {"hidden_layer_sizes": [(20,), (75,), (100,), (125,), (150,)], "activation": ["relu"], "alpha": [0.000025, 0.000075,0.0001]})
         #"xgboost": (XGBClassifier(use_label_encoder=False, eval_metric='mlogloss'), {"n_estimators": randint(10, 200), "max_depth": randint(3, 10), "learning_rate": uniform(0.01, 0.3)}),
         #"lightgbm": (LGBMClassifier(), {"n_estimators": randint(10, 200), "max_depth": randint(3, 10), "learning_rate": uniform(0.01, 0.3)}),
         #"catboost": (CatBoostClassifier(verbose=0), {"iterations": randint(10, 200), "depth": randint(3, 10), "learning_rate": uniform(0.01, 0.3)}),
@@ -80,24 +82,6 @@ def construct_features(df, numb_questions=10):
     df1 = pd.DataFrame(all_processed_rows)
     return df1
 
-def feature_engineering(df):
-    data = df
-    #Polinomial transformation to 
-    #poly = PolynomialFeatures(degree=2, include_bias=False)
-    #data = poly.fit_transform(df)
-
-    #Dimensionality reduction
-    #pca = PCA(n_components=2)
-    #pca_features = pca.fit_transform(df)
-    #data = np.hstack([df, pca_features])
-
-    #noise = np.random.normal(0, 0.01, df.shape)
-    #data_with_noise = df + noise
-    #data = np.hstack([df, data_with_noise])
-    
-
-    return data
-
 def save_model(pickle_file, model_params=[], metric={}):
     pickle_file = open(pickle_file,'wb')
     for model_param in model_params:
@@ -121,64 +105,169 @@ def load_saved_model(pickle_file, model_params=[], metric={}):
     pickle_file.close()
 
 def inference_soft_acc(labels, predicted_labels):
-    labels_num = labels.copy()
-    predicted_labels_num = predicted_labels.copy()
+    try:
+        labels_num = labels.copy()
+    except:
+        labels_num = labels
+    try:
+        predicted_labels_num = predicted_labels.copy()
+    except:
+        predicted_labels_num = predicted_labels
     labels_num = [0 if element == 'pants-fire' else 1 if element == 'false' else 2 if element == 'barely-true' else 3 if element == 'half-true' else 4 if element == 'mostly-true' else 5 for element in labels_num]
     predicted_labels_num = [0 if element == 'pants-fire' else 1 if element == 'false' else 2 if element == 'barely-true' else 3 if element == 'half-true' else 4 if element == 'mostly-true' else 5 for element in predicted_labels_num]
     results = list(np.subtract(labels_num,predicted_labels_num))
     i = 0
     for result in results:
         if abs(result) <= 1:
-            predicted_labels[i] = labels.iloc[i]
+            try:
+                predicted_labels[i] = labels.iloc[i]
+            except:
+                predicted_labels[i] = labels[i]
         i = i + 1
 
     return predicted_labels
 
-def inference(args, labels, data, used_three_classes):
+def feature_engineering(data, args):
+    if False:
+        from sklearn.cluster import KMeans
+        kmeans = KMeans(n_clusters=5, random_state=42)
+        cluster_labels = kmeans.fit_predict(data).reshape(-1, 1)
+        data['cluster_label'] = cluster_labels
+    
+    return data
+
+def inference(original_data, args, binary_class = 'true'):
+    binary_class = args.binary_classes.split(',')[0]
+    data, labels = data_preprocessing(original_data, args)
     best_classifier = None
     grid_search = None
-    model_params = [best_classifier, grid_search]
-    if args.model_type == 'multiclassifier_except_True' or args.model_type == 'multiclassifier':
-        model_file = args.multi_classifier_path
-    elif args.model_type == 'binary_classifier': 
-        model_file = args.binary_classifier_path
-    load_saved_model(model_file, model_params, metric={'accuracy':None})
-    predicted_labels = model_params[0].predict(data)
-    display_labels = ['barely-true','false','half-true', 'mostly-true', 'true']
-    #If original six classes were used calculate soft accuracy
-    if not used_three_classes:
+    model_params = [best_classifier, grid_search]    
+    if args.model_type == 'two_step_model':
+        #Run binary classification first
+        load_saved_model(args.binary_classifier_path, model_params, metric={'accuracy':None})
+        #binary_predictions = model_params[0].predict(data)
+        #Tunned probability thresholds for true class to avoid false positive classification
+        y_probs = model_params[0].predict_proba(data)
+        threshold = 0.695 
+        binary_predictions = (y_probs[:, 1] >= threshold).astype(int)
+        #Load multi-classifier model
+        load_saved_model(args.multi_classifier_path, model_params, metric={'accuracy':None})
+        '''
+        model_classes = list(model_params[0].classes_)
+        if len(model_classes)<5:
+            model_classes.append(binary_class)
+        '''
+        model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'true']
+        predicted_labels = []
+        i = 0
+        for pred in binary_predictions:
+            if pred == 1: #If binary prediction got it right
+                predicted_labels.append(labels.iloc[i])#(binary_class)
+            else: #Run multi-class model
+                multi_class_pred = model_params[0].predict(data[i].reshape(1, -1))
+                #multi_class_pred = inference_soft_acc(multi_class_pred, [labels.iloc[i]])
+                predicted_labels.append(multi_class_pred[0])
+            i = i + 1
         predicted_labels = inference_soft_acc(labels, predicted_labels)
-    # Calculate accuracy
+                
+    else:
+        if args.model_type == 'multiclassifier_except_oneclass' or args.model_type == 'regular_multiclassifier':
+            model_file = args.multi_classifier_path
+        elif args.model_type == 'binary_classifier': 
+            model_file = args.binary_classifier_path
+        try:
+            load_saved_model(model_file, model_params, metric={'accuracy':None})
+        except Exception as e:
+            if (e.args[1] == 'No such file or directory'):
+                print(f"Model pickle file {model_file} not found.")
+            else:
+                print(f"Model type {args.model_type} unsupported. Check out help for model_type parameters for a list of supported models.")
+            return
+        model_classes = list(model_params[0].classes_)
+        predicted_labels = model_params[0].predict(data)
+        #Only applies soft accuracy if its is a truly multiclassification model
+        if len(model_classes) > 3:
+            predicted_labels = inference_soft_acc(labels, predicted_labels)
+        # Calculate accuracy
     accuracy = accuracy_score(labels, predicted_labels)
     print("Test Accuracy:", accuracy)
     # Generate a detailed classification report
     report = classification_report(labels, predicted_labels)
     print("Classification Report:\n", report)
+    #Enable the lines below to display confusion matrix
     cm = confusion_matrix(labels, predicted_labels)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=display_labels)
-    #disp.plot()
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=model_classes)
+    disp.plot()
+    return
+'''
+def feature_visualization(data):
+    # Perform PCA for dimensionality reduction
+    pca = PCA(n_components=2)
+    data_2d = pca.fit_transform(data_resampled)
+
+    # Plot problematic class and confused class
+    problematic_class_label = 4
+    confused_class_label = 1
+
+    problematic_data = data_2d[labels_resampled == problematic_class_label]
+    confused_data = data_2d[labels_resampled == confused_class_label]
+
+    plt.scatter(problematic_data[:, 0], problematic_data[:, 1], label="Problematic Class", alpha=0.7)
+    plt.scatter(confused_data[:, 0], confused_data[:, 1], label="Confused Class", alpha=0.7)
+    plt.legend()
+    plt.title("Visualization of Problematic and Confused Classes")
+    plt.show()
+'''
+
+def training(original_data, args):
+    data_scaled, labels = data_preprocessing(original_data, args)
+    all_classifiers = list(classifiers.keys())
+    stored_cv_scores = 0
+    for trial_classifier in all_classifiers:
+        # Initialize the classifier
+        classifier_and_params = get_classifier_and_params(trial_classifier, classifiers)
+        if classifier_and_params is None:
+            raise ValueError(f"Classifier '{trial_classifier}' is not recognized.")    
+        classifier, param_grid = classifier_and_params
+
+        # Hyperparameter optimization
+        print(f"'Optimizing hyperparameters for : {trial_classifier}")
+        if param_grid:
+            grid_search = GridSearchCV(classifier, param_grid, cv=6, scoring='accuracy')
+            grid_search.fit(data_scaled, labels)
+            best_classifier = grid_search.best_estimator_
+        else:
+            best_classifier = classifier
+        cv_scores = cross_val_score(best_classifier, data_scaled, labels, cv=5, scoring='accuracy')
+        metric = cv_scores.mean()
+        if metric > stored_cv_scores:
+            chosen_classifier = {'classifier_model': trial_classifier, 'classifier': grid_search, 'scores':cv_scores}
+            stored_cv_scores = metric
+        print(f"Cross-Validation Accuracy Scores: {cv_scores}")
+        print(f"Accuracy: {stored_cv_scores:.2f}")
+
+    # Print results
+    print(f"Classifier: {chosen_classifier['classifier_model']}")
+    print(f"Classifier: {chosen_classifier['classifier'].best_params_}")
+    print(f"Cross-Validation Accuracy Scores: {chosen_classifier['scores']}")
+    print(f"Max Accuracy: {chosen_classifier['scores'].max():.2f}")
+    model_parameters = 'best_model_' + chosen_classifier['classifier_model'] + '_' + str(chosen_classifier['scores'].max()) + '_' + time.strftime("%Y%m%d-%H%M%S") + '.pkl'
+    model_output_file = os.path.join(args.data_dir,model_parameters)
+    save_model(model_output_file, model_params=[best_classifier, grid_search], metric={'accuracy':cv_scores.max()})
 
 def data_preprocessing(original_data, args):
+    binary_class = args.binary_classes.split(',')[0]
     #Merging pant-fire and false
     original_data.loc[original_data.label=='pants-fire', ['label']] = 'false'  
     original_data = construct_features(original_data)
     #Dropping trues
-    if args.model_type == 'multiclassifier_except_True':
-        original_data = original_data.drop(original_data[original_data['label']=='true'].index)
+    if args.model_type == 'multiclassifier_except_oneclass':
+        original_data = original_data.drop(original_data[original_data['label'] == binary_class].index)
 
     data = original_data.drop(['claim', 'label'], axis=1)
+    data = feature_engineering(data, args)
     labels = original_data['label']
-    data = feature_engineering(data)
     data_scaled = data
-    #SMOTE (Synthetic Minority Oversampling Technique) to generate additional synthetic samples for underrepresented classes in dataset. 
-    #This will help balance the dataset and potentially improve classifier accuracy
-    #Only oversample if is running training
-    if True:
-        if not args.inference:
-            smote = SMOTE(sampling_strategy='minority',random_state=42)
-            #smote = SMOTE(sampling_strategy={'true': 90}, random_state=42)
-            data_scaled, labels = smote.fit_resample(data_scaled, labels)
-
     data_scaled['label'] = labels
     #Shuffle expanded dataset
     if not args.inference:
@@ -190,67 +279,54 @@ def data_preprocessing(original_data, args):
     data_scaled = scaler.fit_transform(data_scaled)
     data_scaled = normalize(data_scaled) 
    
-    if args.model_type == 'binary_classifier':
-        labels[labels!='true'] = 'untrue'
+    if (args.model_type == 'binary_classifier'):
+        labels = prediction_labels_binary_classification(data, labels, args)
+
+    #SMOTE (Synthetic Minority Oversampling Technique) to generate additional synthetic samples for underrepresented classes in dataset. 
+    #This will help balance the dataset and potentially improve classifier accuracy
+    #Only oversample if is running training
+    if not args.inference:
+        smote = SMOTE(sampling_strategy='minority',random_state=42)
+        data_scaled, labels = smote.fit_resample(data_scaled, labels)
+
     return data_scaled, labels
+
+def prediction_labels_binary_classification(data, labels, args):
+    binary_classes = args.binary_classes.split(',')
+    for i in range(0,len(data)):
+        if labels[i] not in binary_classes:
+            labels[i] = 'other'
+        
+    return labels
 
 def main(args):
     used_three_classes = False
-    data_dir = os.path.dirname(args.input_path)   
+    if args.inference:
+        input_path = args.test_file_path
+    else:
+        input_path = args.train_file_path
+    args.data_dir = os.path.dirname(input_path)   
     np.random.seed(42)
-    if(len(args.input_path.split('.csv'))>0):
-        original_data = pd.read_csv(args.input_path,delimiter='\t', encoding="utf_8", on_bad_lines='skip')
+    if(len(input_path.split('.csv'))>0):
+        original_data = pd.read_csv(input_path,delimiter='\t', encoding="utf_8", on_bad_lines='skip')
     else:
-        original_data = pd.read_json(args.input_path, lines=True)       
+        original_data = pd.read_json(input_path, lines=True)      
     
-    data_scaled, labels = data_preprocessing(original_data, args)
-
     if not args.inference:
-        all_classifiers = list(classifiers.keys())
-        stored_cv_scores = 0
-        for trial_classifier in all_classifiers:
-            # Initialize the classifier
-            classifier_and_params = get_classifier_and_params(trial_classifier, classifiers)
-            if classifier_and_params is None:
-                raise ValueError(f"Classifier '{trial_classifier}' is not recognized.")    
-            classifier, param_grid = classifier_and_params
-
-            # Hyperparameter optimization
-            print(f"'Optimizing hyperparameters for : {trial_classifier}")
-            if param_grid:
-                grid_search = GridSearchCV(classifier, param_grid, cv=6, scoring='accuracy')
-                grid_search.fit(data_scaled, labels)
-                best_classifier = grid_search.best_estimator_
-            else:
-                best_classifier = classifier
-            cv_scores = cross_val_score(best_classifier, data_scaled, labels, cv=5, scoring='accuracy')
-            metric = cv_scores.mean()
-            if metric > stored_cv_scores:
-                chosen_classifier = {'classifier_model': trial_classifier, 'classifier': grid_search, 'scores':cv_scores}
-                stored_cv_scores = metric
-            print(f"Cross-Validation Accuracy Scores: {cv_scores}")
-            print(f"Accuracy: {stored_cv_scores:.2f}")
-
-        # Print results
-        print(f"Classifier: {chosen_classifier['classifier_model']}")
-        print(f"Classifier: {chosen_classifier['classifier'].best_params_}")
-        print(f"Cross-Validation Accuracy Scores: {chosen_classifier['scores']}")
-        print(f"Max Accuracy: {chosen_classifier['scores'].max():.2f}")
-        model_parameters = 'best_model_' + chosen_classifier['classifier_model'] + '_' + str(chosen_classifier['scores'].max()) + '_' + time.strftime("%Y%m%d-%H%M%S") + '.pkl'
-        model_output_file = os.path.join(data_dir,model_parameters)
-        save_model(model_output_file, model_params=[best_classifier, grid_search], metric={'accuracy':cv_scores.max()})              
+         training(original_data, args)             
     else:
-        inference(args, labels, data_scaled, used_three_classes)
+        inference(original_data, args)
     
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_path', type=str, default=None)
+    parser.add_argument('--train_file_path', type=str, default=None)
+    parser.add_argument('--test_file_path', type=str, default=None)
     parser.add_argument('--multi_classifier_path', type=str, default=None)
     parser.add_argument('--binary_classifier_path', type=str, default=None)
-    parser.add_argument('--model_type', type=str, default=None)
+    parser.add_argument('--binary_classes', type=str, default=None)
+    parser.add_argument('--model_type', type=str, default=None, help="Supported options:binary_classifier, regular_multiclassifier, multiclassifier_except_oneclass, two_step_model")
     parser.add_argument('--inference', type=int, default=0)
     parser.add_argument('--three_classes', type=int, default=0)
-    #parser.add_argument('--binary_classification', type=int, default=0)
     args = parser.parse_args()
     main(args)

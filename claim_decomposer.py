@@ -77,12 +77,13 @@ def construct_prompt(claim, prompt_params=None):
     #Improved Prompt using timeframe of claim
     prompt = ''' You are a fact-checker. A claim is true when the statement is accurate. A claim is false when the statement is not accurate.
     The following claim was published on {}: "{}"  
-    Assume you will do a web search to verify the claim. What would be the {} most important yes or no questions to feed a web browser to verify the claim is true and the {} most important questions to verify the claim is false? 
+    Assume you will do a web search to verify the claim. What would be the {} most important yes or no questions to feed a web browser to verify if the claim is true? 
     All questions need to have a "yes" response if the claim is true and a "no" answer if the claim is false. 
+    All the questions must explore different aspects of the claim.
     Return a single list of questions in the following format without any other text: 
     Question: 
     Justification:
-    The top five to verify the claim is true and the bottom five to verify the claim is false.'''.format(prompt_params['claim_date'], claim, int(prompt_params['numbed_of_questions']/2), int(prompt_params['numbed_of_questions']/2))
+    The top five to verify the claim is true and the bottom five to verify the claim is false.'''.format(prompt_params['claim_date'], claim, int(prompt_params['numbed_of_questions']))
 
     #Trying to not add bias towards true or false classification
     prompt = '''You are a fact-checker. A claim is true when the statement is accurate. A claim is false when the statement is not accurate.

@@ -62,7 +62,7 @@ def main(args):
         chunks = [df[start:end]]
     args.start = 0
     args.end = None
-    data_path = args.input_path.split('.jsonl')[0] + '_' + time.strftime("%Y%m%d-%H%M%S")
+    data_path = args.final_output_path.split('.jsonl')[0] + '_' + time.strftime("%Y%m%d-%H%M%S")
     if not os.path.exists(data_path):
         os.makedirs(data_path)
         ####DELETE
