@@ -163,10 +163,9 @@ def format_response(res, questions, justifications):
 
 def main(args):
     df = pd.read_json(args.input_path, lines=True)
-
-    # Add empty column if we don't have already
-    df["claim questions"] = ""
+    df["claim_questions"] = ""
     df["justifications"] = ""
+    df["LLM_decomposing_prompt"] = ""
     start = 0 if not args.start else args.start
     end = len(df) if not args.end else args.end
     llm = ChatOpenAI(temperature = 0.7, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
@@ -179,9 +178,10 @@ def main(args):
             justifications = []
             when_where = df.iloc[i]['venue']
             prompt_params={'numbed_of_questions':MAX_NUM_QUESTIONS, 'claim_date': extract_claim_date(when_where, args.time_offset)}
+            df.at[i, 'LLM_decomposing_prompt'] =construct_prompt(claim, prompt_params)
             response = promptLLM(llm, func_prompts, claim, start_time=start_time, prompt_params=prompt_params)
             questions, justifications = format_response(response.content, questions, justifications)
-            df.at[i, 'claim questions'] = questions
+            df.at[i, 'claim_questions'] = questions
             df.at[i, 'justifications'] = justifications
         except Exception as e:
             print("error caught", e)
