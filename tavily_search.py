@@ -79,4 +79,5 @@ if __name__ == '__main__':
     parser.add_argument('--start', type=int, default=0, help="start index of the data to do retrieval")
     parser.add_argument('--end', type=int, default=1000, help="end index of the data to do retrieval")
     parser.add_argument('--chunk_size', type=int, default=50, help="size of the chunk")
+    parser.add_argument('--use_time_stamp', type=int, default=1, help="size of the chunk")
     main(parser.parse_args())

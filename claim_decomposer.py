@@ -96,6 +96,18 @@ def construct_prompt(claim, prompt_params=None):
     Justification:
     The top five to verify the claim is true and the bottom five to verify the claim is false.'''.format(prompt_params['claim_date'],claim, int(prompt_params['numbed_of_questions']/2), int(prompt_params['numbed_of_questions']/2))
 
+    #Remove date since after improving the web search range filtering
+    #Trying to not add bias towards true or false classification
+    prompt = '''You are a fact-checker. A claim is true when the statement is accurate. A claim is false when the statement is not accurate.
+    Take the following claim: "{}" 
+    Assume you will do a web search to verify the claim. What would be the {} most important yes or no types of questions to feed a web browser to verify the claim is true and the 
+    {} most important yes or no types of questions to feed a web browser to verify the claim is false?
+    The two sets of 5 questions must explore different aspects of the claim. 
+    Return a single list of questions in the following format without any other text: 
+    Question: 
+    Justification:
+    The top five to verify the claim is true and the bottom five to verify the claim is false.'''.format(claim, int(prompt_params['numbed_of_questions']/2), int(prompt_params['numbed_of_questions']/2))
+
     return prompt
 
 func_prompts = [construct_prompt]

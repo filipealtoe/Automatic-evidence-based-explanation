@@ -128,6 +128,7 @@ def main(args):
                                 'question': decomposed_search_hit['decomposed_question']}
             try:
                 response = promptLLM(llm, func_prompts, merged_justification, start_time=start_time, prompt_params=prompt_params)
+                skip_response = 0
             except Exception as e:
                 response_text = ""
                 print("error caught", e)

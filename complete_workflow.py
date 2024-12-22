@@ -2,6 +2,7 @@ import argparse
 import os
 import logging
 from collections import deque
+import glob
 import pathlib
 import time
 import claim_decomposer, web_search, justification_summarizer_approach1, justification_summarizer_approach2
@@ -38,13 +39,13 @@ logging.basicConfig(
     handlers=[logging.FileHandler("workflow.log"), logging.StreamHandler()]
 )
 
-def merge_chunked_files(files_dir, consolidated_file_name, files_extension='.csv'):
+def merge_chunked_files(files_dir, consolidated_file_name, files_pattern='classification*.csv'):
     #df=pd.DataFrame()
     all_dfs = []
-    for file in os.listdir(files_dir):
-        if file.endswith(files_extension):
-            aux=pd.read_csv(os.path.join(files_dir, file), encoding='utf-8', sep='\t', header=0)
-            all_dfs.append(aux)
+    for file in glob.glob(f"{files_dir}/{files_pattern}"):
+        #if file.endswith(files_extension):
+        aux=pd.read_csv(os.path.join(files_dir, file), encoding='utf-8', sep='\t', header=0)
+        all_dfs.append(aux)
     df = pd.concat(all_dfs, axis=0)
     df.to_csv(os.path.join(files_dir, consolidated_file_name), sep ='\t', header=True, index=False, encoding='utf-8')
     
@@ -53,7 +54,12 @@ def merge_chunked_files(files_dir, consolidated_file_name, files_extension='.csv
 def main(args):
     df = pd.read_json(args.input_path, lines=True)
     start = 0 if not args.start else args.start
-    end = len(df) if not args.end else args.end
+    if not args.end:
+        end = len(df)
+    else:
+        if args.end > len(df):
+            end = len(df)
+    #end = len(df) if not args.end else args.end
     #Split dataset into four chunks of 20 claims for intermediate file saving
     claims_chunk = 20
     if df.shape[0]>=claims_chunk:
@@ -62,10 +68,10 @@ def main(args):
         chunks = [df[start:end]]
     args.start = 0
     args.end = None
-    data_path = args.final_output_path.split('.jsonl')[0] + '_' + time.strftime("%Y%m%d-%H%M%S")
+    data_path = args.final_output_path + '_' + time.strftime("%Y%m%d-%H%M%S")
     if not os.path.exists(data_path):
         os.makedirs(data_path)
-        ####DELETE
+    ####DELETE
     #merge_chunked_files(data_path,"all_classified.csv")
     i = 0
     run_start_time = time.time()
@@ -117,12 +123,14 @@ def main(args):
         df_list = []
     for final_file in list_final_files_to_merge:
         df_list.append(pd.read_json(final_file, lines=True))
-    final_df = pd.concat(df_list, axis=0)
-    final_df.to_json(data_path + '/' + 'complete_workflow' + '.jsonl', orient='records', lines=True)
-    merge_chunked_files(data_path,"all_classified.csv")
-    print('All Done!!!') 
-    print('Total Time to complete the Run (sec): {}'.format(str(time.time() - run_start_time)))
-    
+    if len(df_list) > 0:
+        final_df = pd.concat(df_list, axis=0)
+        final_df.to_json(data_path + '/' + 'complete_workflow' + '.jsonl', orient='records', lines=True)
+        merge_chunked_files(data_path,"all_classified.csv")
+        print('All Done!!!') 
+        print('Total Time to complete the Run (sec): {}'.format(str(time.time() - run_start_time)))
+    else:
+        print('Dataframe list was empty. Something bad happened!')
     
 
 

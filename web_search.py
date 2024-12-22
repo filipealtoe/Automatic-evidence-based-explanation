@@ -78,14 +78,16 @@ def process_chunk(chunk, chunk_idx, retriever, args):
     chunk['decomposed_search_hits'] = ""
     try:
         for i, row in tqdm(chunk.iterrows()):
+            '''
             # skip if the row has already been processed with time constraint
-            if args.use_time_stamp and row['search_results_timestamp']:
+            if args.use_time_stamp:
                 print(f'row {i} in chunk {chunk_idx} has already been processed with time constraint')
                 continue
             # skip if the row has already been processed without time constraint
-            if not args.use_time_stamp and row['search_results']:
+            if not args.use_time_stamp:
                 print(f'row {i} in chunk {chunk_idx} has already been processed without time constraint')
                 continue
+            '''
             when_where = row['venue']
             timestamp = extract_claim_date(when_where, args.time_offset)
             if args.use_annotation:
@@ -96,7 +98,7 @@ def process_chunk(chunk, chunk_idx, retriever, args):
                 claim = f"{row['person']} {row['venue']} {row['claim']}"
                 questions = [claim]
             else:
-                questions = row['claim questions']
+                questions = row['claim_questions']
             questions = [q for q in questions if q.strip()]
             all_urls = set()
             all_entity_names = set()
@@ -110,6 +112,7 @@ def process_chunk(chunk, chunk_idx, retriever, args):
                 results['decomposed_question'] = q
                 results['decomposed_justification'] = row['justifications'][justification_index]
                 justification_index = justification_index + 1
+                q = retriever.format_query(q, timestamp)
                 if args.use_time_stamp:
                     res = retriever.get_results(q, timestamp)
                 else:
@@ -134,7 +137,7 @@ def process_chunk(chunk, chunk_idx, retriever, args):
 def main(args):
     if 'jsonl' in args.input_path:
         df = pd.read_json(args.input_path, lines=True)
-    else:
+    '''else:
         url = args.url.replace('/edit#gid=', '/export?format=csv&gid=')
         df = pd.read_csv(url)
     try:
@@ -147,7 +150,7 @@ def main(args):
         df["search_results"] = ""
     except:
         df["search_results"] = ""
-
+    '''
     web_retriever = retriever.WebRetriever(
         engine='bing',
         answer_count=args.answer_count,
@@ -163,19 +166,19 @@ def main(args):
         end = min(len(df), args.end)
 
     #Re-enable for sequential processing
-    chunks = df
-    results = process_chunk(chunks, len(chunks.index), web_retriever, args)
-    results.to_json(args.output_path, orient='records', lines=True)
+    #chunks = df
+    #results = process_chunk(chunks, len(chunks.index), web_retriever, args)
+    #results.to_json(args.output_path, orient='records', lines=True)
 
     #Re-enable for parallel processing
-    #chunks = [df[i:i + args.chunk_size] for i in range(start, end, args.chunk_size)]
-    #with Pool() as pool:
-        #process_arg = [(chunk, idx, web_retriever, args) for idx, chunk in enumerate(chunks)]
-        #results = pool.starmap(process_chunk, process_arg)
-    # Separate the results into two lists
+    chunks = [df[i:i + args.chunk_size] for i in range(start, end, args.chunk_size)]
+    with Pool() as pool:
+        process_arg = [(chunk, idx, web_retriever, args) for idx, chunk in enumerate(chunks)]
+        results = pool.starmap(process_chunk, process_arg)
+
     # Merge the results back into a single DataFrame
-    #df_processed = pd.concat([r for r in results if r is not None])
-    #df_processed.to_json(args.output_path, orient='records', lines=True)
+    df_processed = pd.concat([r for r in results if r is not None])
+    df_processed.to_json(args.output_path, orient='records', lines=True)
     
     print('Done Web Searching!')
 

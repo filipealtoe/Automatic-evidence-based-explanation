@@ -4,6 +4,10 @@ import pandas as pd
 import os
 import time
 import pickle
+import json
+from htmldate import find_date
+from web_search import extract_claim_date
+from datetime import datetime
 from sklearn.model_selection import cross_val_score, GridSearchCV, RandomizedSearchCV
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KNeighborsClassifier
@@ -25,7 +29,7 @@ from lightgbm import LGBMClassifier
 from catboost import CatBoostClassifier
 from scipy.stats import randint, uniform
 
-CLASSIFIER = "logistic_regression"
+
 classifiers = {
         "knn": (KNeighborsClassifier(), {"n_neighbors": [3, 5, 7, 9 , 10, 50, 100]}),
         "naive_bayes": (GaussianNB(), {}),  # No hyperparameters to tune
@@ -293,25 +297,54 @@ def prediction_labels_binary_classification(data, labels, args):
         
     return labels
 
+def validate_returned_urls(df, args):
+    from tqdm import tqdm
+    problematic_urls = []
+    report_file = args.train_sourcefile_path.split('.jsonl')[0] + '_url_validation.txt'
+    for i, row in tqdm(df.iterrows()):
+        timestamp = extract_claim_date(row['venue'], args.time_offset)
+        search_hits = list(row['decomposed_search_hits'])        
+        problems = {}
+        for hit in search_hits:
+            i = 0
+            for page in hit['pages_info']:
+                if (page['page_timestamp'] != None) and (page['page_timestamp'] != 'placeholder'):
+                    if (datetime.strptime(timestamp, "%Y-%m-%d") < datetime.strptime(page['page_timestamp'], "%Y-%m-%d")):
+                            problematic_urls.append({'decomposed_question':hit['decomposed_question'], 'claim_date': timestamp, 'url':page['page_url'], 'page_timestamp':page['page_timestamp'], 'page_index':i})
+                            i = i + 1
+    #with open('outputfile', 'w') as fout:
+        #json.dump(problematic_urls, fout)
+    with open(report_file, 'w') as file:
+        file.write(json.dumps(problematic_urls, indent=4))
+    return problematic_urls
+
 def main(args):
-    used_three_classes = False
+    df = pd.read_json(args.train_sourcefile_path, lines=True)
+    #df1 = pd.read_json(args.train_file_path, lines=True)
+    test = validate_returned_urls(df, args)
+    small_train = pd.read_csv(args.train_file_path,delimiter='\t', encoding="utf_8", on_bad_lines='skip')
+    train_allYes = pd.read_csv(args.test_file_path,delimiter='\t', encoding="utf_8", on_bad_lines='skip')
+
+    original_claims = list(df['claim'])
+    small_train = list(small_train['claim'])
+    train_allYes = list(train_allYes['claim'])
+
+    unique_to_small_train_in_original_claims = np.setdiff1d(small_train,original_claims)
+    unique_to_train_allYes_in_small_train = np.setdiff1d(train_allYes,small_train)
+    unique_to_train_allYes_in_original_claims = np.setdiff1d(train_allYes,original_claims)
+    unique_to_small_train_in_train_allYes = np.setdiff1d(small_train,train_allYes)
+
     if args.inference:
         input_path = args.test_file_path
     else:
         input_path = args.train_file_path
     args.data_dir = os.path.dirname(input_path)   
     np.random.seed(42)
-    try:
-        input_path.split('.csv')[1]
-        original_data = pd.read_csv(input_path,delimiter='\t', encoding="utf_8", on_bad_lines='skip', dtype=str)
-    except Exception as e:
-        original_data = pd.read_json(input_path, lines=True)
-    '''
     if(len(input_path.split('.csv'))>0):
         original_data = pd.read_csv(input_path,delimiter='\t', encoding="utf_8", on_bad_lines='skip')
     else:
         original_data = pd.read_json(input_path, lines=True)      
-    '''
+    
     if not args.inference:
          training(original_data, args)             
     else:
@@ -320,6 +353,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--train_sourcefile_path', type=str, default=None)
     parser.add_argument('--train_file_path', type=str, default=None)
     parser.add_argument('--test_file_path', type=str, default=None)
     parser.add_argument('--multi_classifier_path', type=str, default=None)
@@ -330,5 +364,6 @@ if __name__ == '__main__':
     parser.add_argument('--model_type', type=str, default=None, help="Supported options:binary_classifier, regular_multiclassifier, multiclassifier_except_oneclass, two_step_model")
     parser.add_argument('--inference', type=int, default=0)
     parser.add_argument('--three_classes', type=int, default=0)
+    parser.add_argument('--time_offset', type=int, default=0)
     args = parser.parse_args()
     main(args)
