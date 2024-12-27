@@ -4,6 +4,8 @@ import signal
 import requests
 from htmldate import find_date
 import logging
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 from bs4 import BeautifulSoup
 import mmPeriodicTimer as timeout_alarm
 from tavily import TavilyClient
@@ -21,7 +23,9 @@ excluded_sites = ["politifact.com",
                   "youtube.com",
                   ".pdf",
                   "fact-check",
-                  "factcheck"
+                  "factcheck",
+                  "wikipedia.org",
+                  "facebook.com"
                   ]
 
 PLACE_HOLDER = {
@@ -37,6 +41,7 @@ PLACE_HOLDER = {
             'page_url': 'placeholder',
             'page_timestamp': 'placeholder',
             'page_snippet': 'placeholder',
+            'page_content':'placeholder'
         }
     ]
 }
@@ -105,15 +110,24 @@ class WebRetriever:
     handlers=[logging.FileHandler("web_scraper.log"),   # Log to a file
               logging.StreamHandler()]                  # Print logs to the console
 )
+    
+    def format_query(self, question, timestamp):
+        #Set start search range to 5 years prior to claim date
+        start_date_range = (datetime.strptime(timestamp, "%Y-%m-%d") - relativedelta(years=5)).strftime("%Y-%m-%d")
+        exclusion_clause = " ".join(f"-site:{domain}" for domain in excluded_sites)
+        query = f"{question} {exclusion_clause} after: {start_date_range} before:{timestamp}"
+        return query
 
 
     def get_results(self, query: str, time_stamp=None, raw_count=30):
         if self.engine == 'bing':
+            if time_stamp != None:
+                start_date_range = (datetime.strptime(time_stamp, "%Y-%m-%d") - relativedelta(years=5)).strftime("%Y-%m-%d")
             params = {
                 'q': query,
                 'mkt': self.mkt,
                 'count': raw_count,
-                'freshness': "2000-01-01..{}".format(time_stamp) if
+                'freshness': "{}..{}".format(start_date_range, time_stamp) if
                 time_stamp else None
             }
             try:
@@ -146,10 +160,7 @@ class WebRetriever:
                 return PLACE_HOLDER
             retrieved_pages = response_json['webPages']['value']
             count = 0
-            #Filipe 11/13 SIGALRM not supported on Windows OS
-            #signal.signal(signal.SIGALRM, timeout_handler)
-            #signal.alarm(10)
-            
+           
             for i, page in enumerate(retrieved_pages):
                 page_info_entry = {
                     'page_name': None,
@@ -170,9 +181,13 @@ class WebRetriever:
                         page_info_entry['page_timestamp'] = page_date
                         # print(page_date)
                     except Exception as ex:
+                        page_date = None
                         print('Error happens during extracting page timestamp:')
                         print(ex)
-                    
+                    #If was able to retrieve page date, check it againts the timestamp and skip it if later date
+                    if page_date != None: 
+                        if (datetime.strptime(time_stamp, "%Y-%m-%d") < datetime.strptime(page_date, "%Y-%m-%d")):
+                            continue
                     page_info_entry['page_content'] = scrape_website_text(page['url'])
                     if page_info_entry['page_content'] == "":
                         continue
@@ -181,7 +196,6 @@ class WebRetriever:
                     if count == self.answer_count:
                         break
             return {
-                "entities_info": entities_info,
                 "pages_info": pages_info
             }
 

@@ -166,19 +166,19 @@ def main(args):
         end = min(len(df), args.end)
 
     #Re-enable for sequential processing
-    #chunks = df
-    #results = process_chunk(chunks, len(chunks.index), web_retriever, args)
-    #results.to_json(args.output_path, orient='records', lines=True)
+    chunks = df
+    results = process_chunk(chunks, len(chunks.index), web_retriever, args)
+    results.to_json(args.output_path, orient='records', lines=True)
 
     #Re-enable for parallel processing
-    chunks = [df[i:i + args.chunk_size] for i in range(start, end, args.chunk_size)]
-    with Pool() as pool:
-        process_arg = [(chunk, idx, web_retriever, args) for idx, chunk in enumerate(chunks)]
-        results = pool.starmap(process_chunk, process_arg)
+    #chunks = [df[i:i + args.chunk_size] for i in range(start, end, args.chunk_size)]
+    #with Pool() as pool:
+        #process_arg = [(chunk, idx, web_retriever, args) for idx, chunk in enumerate(chunks)]
+        #results = pool.starmap(process_chunk, process_arg)
 
     # Merge the results back into a single DataFrame
-    df_processed = pd.concat([r for r in results if r is not None])
-    df_processed.to_json(args.output_path, orient='records', lines=True)
+    #df_processed = pd.concat([r for r in results if r is not None])
+    #df_processed.to_json(args.output_path, orient='records', lines=True)
     
     print('Done Web Searching!')
 

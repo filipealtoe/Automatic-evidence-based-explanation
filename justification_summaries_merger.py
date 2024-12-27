@@ -14,18 +14,18 @@ from LLMsummarizer import promptLLM
 
 
 # OpenAI API Key
-#openai.api_key = os.getenv("OPENAI_API_KEY")
-api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("OPENAI_API_KEY_CIMPLE")
 
 # OpenAI Engine, feel free to change
 ENGINE = 'gpt-4o-mini'
 # Max number of LLM retries
 MAX_GPT_CALLS = 5
 
+#Usage tier 4
 if ENGINE == 'gpt-4o-mini':
-    max_tokens_min = 200000
+    max_tokens_min = 10000000
 else:
-    max_tokens_min = 30000
+    max_tokens_min = 2000000
 
 TOKEN_THRESHOLD = int(0.75 * max_tokens_min)
 INTERVAL_SECONDS = 45  # Time interval to monitor
@@ -92,7 +92,11 @@ func_prompts = [construct_prompt, construct_mapreduce_prompt]
 def main(args):
     df = pd.read_json(args.input_path, lines=True)
     start = 0 if not args.start else args.start
-    end = len(df) if not args.end else args.end
+    if not args.end:
+        end = len(df)
+    else:
+        if args.end > len(df):
+            end = len(df)
 
     #Temperature = 0 as we want the summary to be factual and based on the input text
     llm = ChatOpenAI(temperature = 0, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
@@ -145,11 +149,11 @@ def main(args):
                     response_text = response.content
                 except:
                     response_text = response['output_text']
-                skip_response = 0
-            #all_rows[j*len(justifications)]['justification_summary'] = response_text
-            #all_rows[j*len(justifications)]['summary_number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])     
-            all_rows[justification_summary_line]['justification_summary'] = response_text
-            all_rows[justification_summary_line]['summary_number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])           
+                skip_response = 0  
+            #all_rows[justification_summary_line]['justification_summary'] = response_text
+            #all_rows[justification_summary_line]['summary_number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])   
+            all_rows[-1]['justification_summary'] = response_text
+            all_rows[-1]['summary_number_of_tokens'] = llm.get_num_tokens(response_text)        
             justifications = []
             decomposed_search_hit['decomposed_justification_explanation'] = response_text
             j = j + 1

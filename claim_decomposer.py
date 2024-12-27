@@ -9,7 +9,7 @@ from langchain_openai import ChatOpenAI
 from LLMsummarizer import promptLLM
 
 # OpenAI API Key
-api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("OPENAI_API_KEY_CIMPLE")
 
 WH_MATCHES = ("why", "who", "which", "what", "where", "when", "how")
 

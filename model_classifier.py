@@ -136,7 +136,7 @@ def feature_engineering(data, args):
     
     return data
 
-def two_stage_classifier(data, labels, model_paths):
+def two_stage_classifier(data, labels, model_paths, emphasis_binary_class = 'true'):
     best_classifier = None
     grid_search = None
     model_params = [best_classifier, grid_search]
@@ -144,25 +144,27 @@ def two_stage_classifier(data, labels, model_paths):
     load_saved_model(model_paths['binary_classifier_path'], model_params, metric={'accuracy':None})
     #binary_predictions = model_params[0].predict(data)
     #Tunned probability thresholds for true class to avoid false positive classification
+    binary_labels = model_params[0].classes_
+    emphasis_binary_class_index = np.where(np.array(binary_labels) == emphasis_binary_class)[0][0]
     y_probs = model_params[0].predict_proba(data)
-    threshold = 0.695 
-    binary_predictions = (y_probs[:, 1] >= threshold).astype(int)
+    threshold = 0.45
+    binary_predictions = (y_probs[:, emphasis_binary_class_index] >= threshold).astype(int)
     #Load multi-classifier model
     load_saved_model(model_paths['multi_classifier_path'], model_params, metric={'accuracy':None})
     predicted_labels = []
     i = 0
     for pred in binary_predictions:
         if pred == 1: #If binary prediction got it right
-            predicted_labels.append(labels.iloc[i])#(binary_class)
+            predicted_labels.append(emphasis_binary_class)#labels.iloc[i])#(binary_class)
         else: #Run multi-class model
             multi_class_pred = model_params[0].predict(data[i].reshape(1, -1))
             #multi_class_pred = inference_soft_acc(multi_class_pred, [labels.iloc[i]])
             predicted_labels.append(multi_class_pred[0])
         i = i + 1
-    predicted_labels = inference_soft_acc(labels, predicted_labels)
+    #predicted_labels = inference_soft_acc(labels, predicted_labels)
     return predicted_labels
 
-def voting_heuristic(model1_labels, model2_labels, model1_winning_classes = ['true'], model2_winning_classes = ['false', 'half-true']):
+def voting_heuristic(model1_labels, model2_labels, model2_winning_classes = []):
     predicted_labels = model1_labels.copy()
     for i in range(0,len(model1_labels)):
         if model1_labels[i] in model2_winning_classes:
@@ -175,14 +177,14 @@ def inference(original_data, args, binary_class = 'true'):
     best_classifier = None
     grid_search = None
     model_params = [best_classifier, grid_search]    
-    if args.model_type == 'two_step_model' or args.model_type == 'voting_model':
+    if args.model_type == 'voting_model':
         model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'true']
         model_paths = {'binary_classifier_path':args.binary_classifier_path, 'multi_classifier_path':args.multi_classifier_path}
-        model1_predicted_labels = two_stage_classifier(data, labels, model_paths)
-        if args.model_type == 'voting_model':
-            model_paths = {'binary_classifier_path':args.second_binary_classifier_path, 'multi_classifier_path':args.multi_classifier_path}
-            model2_predicted_labels = two_stage_classifier(data, labels, model_paths)
-            predicted_labels = voting_heuristic(model1_predicted_labels, model2_predicted_labels)
+        model1_predicted_labels = two_stage_classifier(data, labels, model_paths, args.binary_classes.split(',')[0])     
+        model_paths = {'binary_classifier_path':args.second_binary_classifier_path, 'multi_classifier_path':args.multi_classifier_path}
+        model2_predicted_labels = two_stage_classifier(data, labels, model_paths, args.second_binary_classes.split(',')[0])
+        predicted_labels = voting_heuristic(model1_predicted_labels, model2_predicted_labels, args.second_binary_classes.split(','))
+
     else:
         if args.model_type == 'multiclassifier_except_oneclass' or args.model_type == 'regular_multiclassifier':
             model_file = args.multi_classifier_path
@@ -199,8 +201,8 @@ def inference(original_data, args, binary_class = 'true'):
         model_classes = list(model_params[0].classes_)
         predicted_labels = model_params[0].predict(data)
         #Only applies soft accuracy if its is a truly multiclassification model
-        if len(model_classes) > 3:
-            predicted_labels = inference_soft_acc(labels, predicted_labels)
+    if len(model_classes) > 3:
+        predicted_labels = inference_soft_acc(labels, predicted_labels)
         # Calculate accuracy
     accuracy = accuracy_score(labels, predicted_labels)
     print("Test Accuracy:", accuracy)
@@ -327,7 +329,7 @@ if __name__ == '__main__':
     parser.add_argument('--second_binary_classifier_path', type=str, default=None)
     parser.add_argument('--binary_classes', type=str, default=None)
     parser.add_argument('--second_binary_classes', type=str, default=None)
-    parser.add_argument('--model_type', type=str, default=None, help="Supported options:binary_classifier, regular_multiclassifier, multiclassifier_except_oneclass, two_step_model")
+    parser.add_argument('--model_type', type=str, default=None, help="Supported options:binary_classifier, regular_multiclassifier, multiclassifier_except_oneclass, voting_model")
     parser.add_argument('--inference', type=int, default=0)
     parser.add_argument('--three_classes', type=int, default=0)
     args = parser.parse_args()

@@ -12,18 +12,18 @@ from langchain_core.prompts import PromptTemplate
 from LLMsummarizer import Faiss_similarity_search
 
 # OpenAI API Key
-#openai.api_key = os.getenv("OPENAI_API_KEY")
-api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("OPENAI_API_KEY_CIMPLE")
 
 # OpenAI Engine, feel free to change
 ENGINE = 'gpt-4o-mini'
 # Max number of LLM retries
 MAX_GPT_CALLS = 5
 
+#Usage tier 4
 if ENGINE == 'gpt-4o-mini':
-    max_tokens_min = 200000
+    max_tokens_min = 10000000
 else:
-    max_tokens_min = 30000
+    max_tokens_min = 2000000
 
 TOKEN_THRESHOLD = int(0.75 * max_tokens_min)
 INTERVAL_SECONDS = 45  # Time interval to monitor
@@ -51,46 +51,50 @@ def main(args):
     '''
     df = pd.read_json(args.input_path, lines=True)
     start = 0 if not args.start else args.start
-    end = len(df) if not args.end else args.end
+    if not args.end:
+        end = len(df)
+    else:
+        if args.end > len(df):
+            end = len(df)
 
     #Temperature = 0 as we want the summary to be factual and based on the input text
     llm = ChatOpenAI(temperature = 0, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
 
     for i in tqdm(range(start, end)):
         decomposed_search_hits = df.iloc[i]['decomposed_search_hits']
-        for decomposed_search_hit in decomposed_search_hits:
-            # Summarizing based on the justification
-            #decomposed_justification = decomposed_search_hit['decomposed_justification']
-            #prompt_params = {'decomposed_justification':decomposed_justification}
-            # Summarizing based on the claim 
-            decomposed_question = decomposed_search_hit['decomposed_question']
-            prompt_params = {'decomposed_justification':decomposed_search_hit['decomposed_question'], 'decomposed_justification':decomposed_search_hit['decomposed_justification']}
-            j = 0
-            start_time = time.time()
-            #Summarize each url page content
-            for page_info in decomposed_search_hit['pages_info']: 
-                page_info['justification_summary'] = {}   
-                numb_tokens = int(NUMB_WORDS_PER_DOC/0.75)  
-                numb_docs = int(NUMB_SIMILAR_WORDS_RETURNED/NUMB_WORDS_PER_DOC)  
-                try:           
-                    page_info['justification_summary']['output_text'] = Faiss_similarity_search(page_info['page_content'], decomposed_question, args, max_prompt_tokens = numb_tokens, 
-                                                            prompt_params=prompt_params, numb_similar_docs=numb_docs)
-                except Exception as e:
-                    page_info['justification_summary']['output_text'] = ""
-                    print("error caught", e)
-                    print('Dataset row = ', i)
-                    print('Decomposed Question: ', decomposed_search_hit['decomposed_question'])
-                    print('Decomposed Justification: ', decomposed_search_hit['decomposed_justification'])
-                    print('Pages_Info index = ', j)           
-                    print('Page name: ', page_info['page_name']) 
-                    print('Page url: ', page_info['page_url'])
-                    print('Page content length: ', len(page_info['page_content'].strip().split(" ")))
-                #If semantic similarity search took longer than the set interval for tokens per minute, restart start time
-                if time.time() - start_time > INTERVAL_SECONDS:
-                    start_time = time.time()         
-                decomposed_search_hit['pages_info'][j] = page_info.copy()
-                j = j + 1
-
+        if decomposed_search_hits != '':
+            for decomposed_search_hit in decomposed_search_hits:
+                # Summarizing based on the justification
+                #decomposed_justification = decomposed_search_hit['decomposed_justification']
+                #prompt_params = {'decomposed_justification':decomposed_justification}
+                # Summarizing based on the claim 
+                decomposed_question = decomposed_search_hit['decomposed_question']
+                prompt_params = {'decomposed_justification':decomposed_search_hit['decomposed_question'], 'decomposed_justification':decomposed_search_hit['decomposed_justification']}
+                j = 0
+                start_time = time.time()
+                #Summarize each url page content
+                for page_info in decomposed_search_hit['pages_info']: 
+                    page_info['justification_summary'] = {}   
+                    numb_tokens = int(NUMB_WORDS_PER_DOC/0.75)  
+                    numb_docs = int(NUMB_SIMILAR_WORDS_RETURNED/NUMB_WORDS_PER_DOC)  
+                    try:           
+                        page_info['justification_summary']['output_text'] = Faiss_similarity_search(page_info['page_content'], decomposed_question, args, max_prompt_tokens = numb_tokens, 
+                                                                prompt_params=prompt_params, numb_similar_docs=numb_docs)
+                    except Exception as e:
+                        page_info['justification_summary']['output_text'] = ""
+                        print("error caught", e)
+                        print('Dataset row = ', i)
+                        print('Decomposed Question: ', decomposed_search_hit['decomposed_question'])
+                        print('Decomposed Justification: ', decomposed_search_hit['decomposed_justification'])
+                        print('Pages_Info index = ', j)           
+                        print('Page name: ', page_info['page_name']) 
+                        print('Page url: ', page_info['page_url'])
+                        print('Page content length: ', len(page_info['page_content'].strip().split(" ")))
+                    #If semantic similarity search took longer than the set interval for tokens per minute, restart start time
+                    if time.time() - start_time > INTERVAL_SECONDS:
+                        start_time = time.time()         
+                    decomposed_search_hit['pages_info'][j] = page_info.copy()
+                    j = j + 1
 
     df.to_json(args.output_path, orient='records', lines=True)
     print('Summarization Complete!')

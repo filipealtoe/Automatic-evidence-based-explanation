@@ -20,8 +20,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 
 # OpenAI API Key
-#openai.api_key = os.getenv("OPENAI_API_KEY")
-api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("OPENAI_API_KEY_CIMPLE")
 
 # OpenAI Engine, feel free to change
 ENGINE = 'gpt-4o-mini'

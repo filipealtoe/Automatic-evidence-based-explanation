@@ -12,7 +12,6 @@ from tqdm import tqdm
 
 
 # OpenAI API Key
-#openai.api_key = os.getenv("OPENAI_API_KEY")
 api_key = os.getenv("OPENAI_API_KEY_CIMPLE")
 
 # OpenAI Engine, feel free to change
@@ -21,9 +20,9 @@ ENGINE = 'gpt-4o'
 MAX_GPT_CALLS = 5
 
 if ENGINE == 'gpt-4o-mini':
-    max_tokens_min = 200000
+    max_tokens_min = 10000000
 else:
-    max_tokens_min = 30000
+    max_tokens_min = 2000000
 
 TOKEN_THRESHOLD = int(0.75 * max_tokens_min)
 INTERVAL_SECONDS = 45  # Time interval to monitor
@@ -57,6 +56,7 @@ def main(args):
     if not args.end:
         end = len(df)
     else:
+        end = args.end
         if args.end > len(df):
             end = len(df)
     #end = len(df) if not args.end else args.end
@@ -72,7 +72,7 @@ def main(args):
     if not os.path.exists(data_path):
         os.makedirs(data_path)
     ####DELETE
-    #merge_chunked_files(data_path,"all_classified.csv")
+    #merge_chunked_files(data_path,"classified_merged.csv", files_pattern="classification*.csv")
     i = 0
     run_start_time = time.time()
     list_final_files_to_merge = []

@@ -14,18 +14,18 @@ from LLMsummarizer import promptLLM
 
 
 # OpenAI API Key
-#openai.api_key = os.getenv("OPENAI_API_KEY")
-api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("OPENAI_API_KEY_CIMPLE")
 
 # OpenAI Engine, feel free to change
 ENGINE = 'gpt-4o-mini'
 # Max number of LLM retries
 MAX_GPT_CALLS = 5
 
-if ENGINE == 'gpt-4o':
-    max_tokens_min = 200000
+#Usage tier 4
+if ENGINE == 'gpt-4o-mini':
+    max_tokens_min = 10000000
 else:
-    max_tokens_min = 30000
+    max_tokens_min = 2000000
 
 TOKEN_THRESHOLD = int(0.75 * max_tokens_min)
 INTERVAL_SECONDS = 45  # Time interval to monitor
