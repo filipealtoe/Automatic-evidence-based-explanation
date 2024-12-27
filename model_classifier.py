@@ -136,7 +136,11 @@ def feature_engineering(data, args):
     
     return data
 
-def two_stage_classifier(data, labels, model_paths, emphasis_binary_class = 'true'):
+def two_stage_classifier(data, labels, model_paths, emphasis_binary_class = 'true', pred_threshold=0.5):
+    try:
+        emphasis_binary_class.remove('')
+    except:
+        pass
     best_classifier = None
     grid_search = None
     model_params = [best_classifier, grid_search]
@@ -147,15 +151,15 @@ def two_stage_classifier(data, labels, model_paths, emphasis_binary_class = 'tru
     binary_labels = model_params[0].classes_
     emphasis_binary_class_index = np.where(np.array(binary_labels) == emphasis_binary_class)[0][0]
     y_probs = model_params[0].predict_proba(data)
-    threshold = 0.45
-    binary_predictions = (y_probs[:, emphasis_binary_class_index] >= threshold).astype(int)
+#    threshold = 0.45
+    binary_predictions = (y_probs[:, emphasis_binary_class_index] >= pred_threshold).astype(int)
     #Load multi-classifier model
     load_saved_model(model_paths['multi_classifier_path'], model_params, metric={'accuracy':None})
     predicted_labels = []
     i = 0
     for pred in binary_predictions:
         if pred == 1: #If binary prediction got it right
-            predicted_labels.append(emphasis_binary_class)#labels.iloc[i])#(binary_class)
+            predicted_labels.append(binary_labels[emphasis_binary_class_index])#labels.iloc[i])#(binary_class)
         else: #Run multi-class model
             multi_class_pred = model_params[0].predict(data[i].reshape(1, -1))
             #multi_class_pred = inference_soft_acc(multi_class_pred, [labels.iloc[i]])
@@ -164,10 +168,10 @@ def two_stage_classifier(data, labels, model_paths, emphasis_binary_class = 'tru
     #predicted_labels = inference_soft_acc(labels, predicted_labels)
     return predicted_labels
 
-def voting_heuristic(model1_labels, model2_labels, model2_winning_classes = []):
+def voting_heuristic(model1_labels, model2_labels, model1_winning_classes = []):
     predicted_labels = model1_labels.copy()
     for i in range(0,len(model1_labels)):
-        if model1_labels[i] in model2_winning_classes:
+        if not model1_labels[i] in model1_winning_classes:
             predicted_labels[i] = model2_labels[i]
     return predicted_labels
 
@@ -178,12 +182,16 @@ def inference(original_data, args, binary_class = 'true'):
     grid_search = None
     model_params = [best_classifier, grid_search]    
     if args.model_type == 'voting_model':
-        model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'true']
+        if args.four_classes:
+            model_classes = ['barely-true', 'false', 'half-true', 'true']
+        else:
+            model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'true']
         model_paths = {'binary_classifier_path':args.binary_classifier_path, 'multi_classifier_path':args.multi_classifier_path}
-        model1_predicted_labels = two_stage_classifier(data, labels, model_paths, args.binary_classes.split(',')[0])     
-        model_paths = {'binary_classifier_path':args.second_binary_classifier_path, 'multi_classifier_path':args.multi_classifier_path}
-        model2_predicted_labels = two_stage_classifier(data, labels, model_paths, args.second_binary_classes.split(',')[0])
-        predicted_labels = voting_heuristic(model1_predicted_labels, model2_predicted_labels, args.second_binary_classes.split(','))
+        model1_predicted_labels = two_stage_classifier(data, labels, model_paths, args.binary_classes.split(','), 0.550)     
+        model_paths = {'binary_classifier_path':args.second_binary_classifier_path, 'multi_classifier_path':args.multi_classifier2_path}
+        model2_predicted_labels = two_stage_classifier(data, labels, model_paths, args.second_binary_classes.split(','))
+        predicted_labels = voting_heuristic(model1_predicted_labels, model2_predicted_labels, 
+                                            model1_winning_classes = args.binary_classes.split(',')[: -1])
 
     else:
         if args.model_type == 'multiclassifier_except_oneclass' or args.model_type == 'regular_multiclassifier':
@@ -252,13 +260,16 @@ def training(original_data, args):
     save_model(model_output_file, model_params=[best_classifier, grid_search], metric={'accuracy':cv_scores.max()})
 
 def data_preprocessing(original_data, args):
-    binary_class = args.binary_classes.split(',')[0]
+    binary_class = args.binary_classes.split(',')
     #Merging pant-fire and false
     original_data.loc[original_data.label=='pants-fire', ['label']] = 'false'  
+    if args.four_classes:
+        original_data.loc[original_data.label=='mostly-true', ['label']] = 'true'
     original_data = construct_features(original_data)
     #Dropping trues
     if args.model_type == 'multiclassifier_except_oneclass':
-        original_data = original_data.drop(original_data[original_data['label'] == binary_class].index)
+        #original_data = original_data.drop(original_data[original_data['label'] == binary_class].index)
+        original_data = original_data.drop(original_data[original_data.label.isin(binary_class)].index.tolist())
 
     data = original_data.drop(['claim', 'label'], axis=1)
     data = feature_engineering(data, args)
@@ -325,12 +336,14 @@ if __name__ == '__main__':
     parser.add_argument('--train_file_path', type=str, default=None)
     parser.add_argument('--test_file_path', type=str, default=None)
     parser.add_argument('--multi_classifier_path', type=str, default=None)
+    parser.add_argument('--multi_classifier2_path', type=str, default=None)
     parser.add_argument('--binary_classifier_path', type=str, default=None)
     parser.add_argument('--second_binary_classifier_path', type=str, default=None)
     parser.add_argument('--binary_classes', type=str, default=None)
     parser.add_argument('--second_binary_classes', type=str, default=None)
     parser.add_argument('--model_type', type=str, default=None, help="Supported options:binary_classifier, regular_multiclassifier, multiclassifier_except_oneclass, voting_model")
     parser.add_argument('--inference', type=int, default=0)
+    parser.add_argument('--four_classes', type=int, default=0)
     parser.add_argument('--three_classes', type=int, default=0)
     args = parser.parse_args()
     main(args)
