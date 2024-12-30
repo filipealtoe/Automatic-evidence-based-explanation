@@ -136,7 +136,29 @@ def feature_engineering(data, args):
     
     return data
 
-def two_stage_classifier(data, labels, model_paths, emphasis_binary_class = 'true', pred_threshold=0.5):
+def binary_classifier(data, model_path, emphasis_binary_class = 'true', pred_threshold=0.5):
+    try:
+        emphasis_binary_class.remove('')
+    except:
+        pass
+    best_classifier = None
+    grid_search = None
+    model_params = [best_classifier, grid_search]
+    #Run binary classification first
+    load_saved_model(model_path, model_params, metric={'accuracy':None})
+    binary_labels = model_params[0].classes_
+    emphasis_binary_class_index = np.where(np.array(binary_labels) == emphasis_binary_class)[0][0]
+    y_probs = model_params[0].predict_proba(data)
+    binary_predictions = (y_probs[:, emphasis_binary_class_index] >= pred_threshold).astype(int)
+    predicted_labels = []
+    for pred in binary_predictions:
+        if pred == 1: #If binary prediction got it right
+            predicted_labels.append(binary_labels[emphasis_binary_class_index])
+        else: 
+            predicted_labels.append('other')
+    return predicted_labels, binary_labels
+
+def two_stage_classifier(data, labels, model_paths, emphasis_binary_class = 'true', pred_threshold=0.5, accuracy_calc=0):
     try:
         emphasis_binary_class.remove('')
     except:
@@ -166,9 +188,23 @@ def two_stage_classifier(data, labels, model_paths, emphasis_binary_class = 'tru
             predicted_labels.append(multi_class_pred[0])
         i = i + 1
     #predicted_labels = inference_soft_acc(labels, predicted_labels)
+    if accuracy_calc:
+        predicted_labels = inference_soft_acc(labels, predicted_labels)
+        report = classification_report(labels, predicted_labels)
+        print("Classification Report:\n", report)
+        #Enable the lines below to display confusion matrix
+        cm = confusion_matrix(labels, predicted_labels)
+        model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'true']
+        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=model_classes)
+        disp.plot()
     return predicted_labels
 
-def voting_heuristic(model1_labels, model2_labels, model1_winning_classes = []):
+def voting_heuristic(model1_labels, model2_labels, args):
+    model1_winning_classes = args.model_one_winning_classes.split(',')
+    try:
+        model1_winning_classes.remove('')
+    except:
+        pass
     predicted_labels = model1_labels.copy()
     for i in range(0,len(model1_labels)):
         if not model1_labels[i] in model1_winning_classes:
@@ -187,27 +223,37 @@ def inference(original_data, args, binary_class = 'true'):
         else:
             model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'true']
         model_paths = {'binary_classifier_path':args.binary_classifier_path, 'multi_classifier_path':args.multi_classifier_path}
-        model1_predicted_labels = two_stage_classifier(data, labels, model_paths, args.binary_classes.split(','), 0.550)     
+        model1_predicted_labels = two_stage_classifier(data, labels, model_paths, args.binary_classes.split(','), args.binary_prob_threshold, args.two_stage_acc_calc)     
         model_paths = {'binary_classifier_path':args.second_binary_classifier_path, 'multi_classifier_path':args.multi_classifier2_path}
-        model2_predicted_labels = two_stage_classifier(data, labels, model_paths, args.second_binary_classes.split(','))
-        predicted_labels = voting_heuristic(model1_predicted_labels, model2_predicted_labels, 
-                                            model1_winning_classes = args.binary_classes.split(',')[: -1])
+        model2_predicted_labels = two_stage_classifier(data, labels, model_paths, args.second_binary_classes.split(','), args.second_binary_prob_threshold, args.two_stage_acc_calc)
+        predicted_labels = voting_heuristic(model1_predicted_labels, model2_predicted_labels, args)
 
     else:
-        if args.model_type == 'multiclassifier_except_oneclass' or args.model_type == 'regular_multiclassifier':
-            model_file = args.multi_classifier_path
-        elif args.model_type == 'binary_classifier': 
-            model_file = args.binary_classifier_path
         try:
-            load_saved_model(model_file, model_params, metric={'accuracy':None})
+            if args.model_type == 'multiclassifier_except_oneclass' or args.model_type == 'regular_multiclassifier':
+                model_file = args.multi_classifier_path
+                load_saved_model(args.multi_classifier_path, model_params, metric={'accuracy':None})
+                model_classes = list(model_params[0].classes_) 
+                predicted_labels = model_params[0].predict(data)
+            elif args.model_type == 'binary_classifier': 
+                model_file = args.binary_classifier_path
+                #true binary
+                if len(args.binary_classes)==2:
+                    predicted_labels, model_classes = binary_classifier(data, args.binary_classifier_path, args.binary_classes, args.binary_prob_threshold)
+                #multiclass
+                else: 
+                    load_saved_model(args.binary_classifier_path, model_params, metric={'accuracy':None})
+                    model_classes = list(model_params[0].classes_)
+                    predicted_labels = model_params[0].predict(data)
+            #load_saved_model(model_file, model_params, metric={'accuracy':None})
         except Exception as e:
             if (e.args[1] == 'No such file or directory'):
                 print(f"Model pickle file {model_file} not found.")
             else:
                 print(f"Model type {args.model_type} unsupported. Check out help for model_type parameters for a list of supported models.")
             return
-        model_classes = list(model_params[0].classes_)
-        predicted_labels = model_params[0].predict(data)
+               
+        #predicted_labels = model_params[0].predict(data)
         #Only applies soft accuracy if its is a truly multiclassification model
     if len(model_classes) > 3:
         predicted_labels = inference_soft_acc(labels, predicted_labels)
@@ -242,7 +288,7 @@ def training(original_data, args):
             best_classifier = grid_search.best_estimator_
         else:
             best_classifier = classifier
-        cv_scores = cross_val_score(best_classifier, data_scaled, labels, cv=5, scoring='accuracy')
+        cv_scores = cross_val_score(best_classifier, data_scaled, labels, cv=6, scoring='accuracy')
         metric = cv_scores.mean()
         if metric > stored_cv_scores:
             chosen_classifier = {'classifier_model': trial_classifier, 'classifier': grid_search, 'scores':cv_scores}
@@ -266,7 +312,7 @@ def data_preprocessing(original_data, args):
     if args.four_classes:
         original_data.loc[original_data.label=='mostly-true', ['label']] = 'true'
     original_data = construct_features(original_data)
-    #Dropping trues
+    #Dropping binary_class
     if args.model_type == 'multiclassifier_except_oneclass':
         #original_data = original_data.drop(original_data[original_data['label'] == binary_class].index)
         original_data = original_data.drop(original_data[original_data.label.isin(binary_class)].index.tolist())
@@ -276,7 +322,7 @@ def data_preprocessing(original_data, args):
     labels = original_data['label']
     data_scaled = data
     data_scaled['label'] = labels
-    #Shuffle expanded dataset
+    #Shuffle training dataset
     if not args.inference:
         indices = np.random.permutation(len(data_scaled))
         data_scaled = data_scaled.iloc[indices]
@@ -286,14 +332,15 @@ def data_preprocessing(original_data, args):
     data_scaled = scaler.fit_transform(data_scaled)
     data_scaled = normalize(data_scaled) 
    
-    if (args.model_type == 'binary_classifier'):
+    if args.model_type == 'binary_classifier':
         labels = prediction_labels_binary_classification(data, labels, args)
 
     #SMOTE (Synthetic Minority Oversampling Technique) to generate additional synthetic samples for underrepresented classes in dataset. 
     #This will help balance the dataset and potentially improve classifier accuracy
     #Only oversample if is running training
     if not args.inference:
-        smote = SMOTE(sampling_strategy='minority',random_state=42)
+        #"minority", "not minority", "not majority", "all"
+        smote = SMOTE(sampling_strategy=args.SMOTE_type,random_state=42)
         data_scaled, labels = smote.fit_resample(data_scaled, labels)
 
     return data_scaled, labels
@@ -339,11 +386,16 @@ if __name__ == '__main__':
     parser.add_argument('--multi_classifier2_path', type=str, default=None)
     parser.add_argument('--binary_classifier_path', type=str, default=None)
     parser.add_argument('--second_binary_classifier_path', type=str, default=None)
+    parser.add_argument('--model_one_winning_classes', type=str, default=None)
     parser.add_argument('--binary_classes', type=str, default=None)
+    parser.add_argument('--binary_prob_threshold', type=float, default=None)
+    parser.add_argument('--second_binary_prob_threshold', type=float, default=None)
     parser.add_argument('--second_binary_classes', type=str, default=None)
     parser.add_argument('--model_type', type=str, default=None, help="Supported options:binary_classifier, regular_multiclassifier, multiclassifier_except_oneclass, voting_model")
     parser.add_argument('--inference', type=int, default=0)
+    parser.add_argument('--two_stage_acc_calc', type=int, default=0)
     parser.add_argument('--four_classes', type=int, default=0)
     parser.add_argument('--three_classes', type=int, default=0)
+    parser.add_argument('--SMOTE_type', type=str, default='all', help="Supported options: minority, not minority, not majority, all")
     args = parser.parse_args()
     main(args)
