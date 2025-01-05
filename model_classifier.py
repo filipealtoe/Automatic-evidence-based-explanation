@@ -259,7 +259,7 @@ def inference(original_data, args, binary_class = 'true'):
 
     else:
         try:
-            if args.model_type == 'multiclassifier_except_oneclass' or args.model_type == 'regular_multiclassifier':
+            if args.model_type == 'multiclassifier_except_binaryclass' or args.model_type == 'regular_multiclassifier':
                 model_file = args.multi_classifier_path
                 load_saved_model(args.multi_classifier_path, model_params, metric={'accuracy':None})
                 model_classes = list(model_params[0].classes_) 
@@ -347,7 +347,7 @@ def data_preprocessing(original_data, args):
     #remove duplicate claims if there are any
     original_data = original_data.drop_duplicates(subset=['claim'])
     #Dropping binary_class
-    if args.model_type == 'multiclassifier_except_oneclass':
+    if args.model_type == 'multiclassifier_except_binaryclass':
         #original_data = original_data.drop(original_data[original_data['label'] == binary_class].index)
         original_data = original_data.drop(original_data[original_data.label.isin(binary_class)].index.tolist())
 
@@ -425,7 +425,7 @@ if __name__ == '__main__':
     parser.add_argument('--binary_prob_threshold', type=float, default=None)
     parser.add_argument('--second_binary_prob_threshold', type=float, default=None)
     parser.add_argument('--second_binary_classes', type=str, default=None)
-    parser.add_argument('--model_type', type=str, default=None, help="Supported options:binary_classifier, regular_multiclassifier, multiclassifier_except_oneclass, two_stage_classifier, voting_model")
+    parser.add_argument('--model_type', type=str, default=None, help="Supported options:binary_classifier, regular_multiclassifier, multiclassifier_except_binaryclass, two_stage_classifier, voting_model")
     parser.add_argument('--inference', type=int, default=0)
     parser.add_argument('--two_stage_acc_calc', type=int, default=0)
     parser.add_argument('--five_classes', type=int, default=0)
