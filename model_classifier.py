@@ -14,7 +14,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPClassifier
-from sklearn.multiclass import OneVsOneClassifier
+from sklearn.multiclass import OneVsOneClassifier,OneVsRestClassifier
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.preprocessing import PolynomialFeatures, normalize
 from sklearn.metrics import classification_report, accuracy_score
@@ -27,13 +27,13 @@ from scipy.stats import randint, uniform
 
 CLASSIFIER = "logistic_regression"
 classifiers = {
-        "knn": (KNeighborsClassifier(), {"n_neighbors": [3, 5, 7, 9 , 10, 50, 100]}),
-        "naive_bayes": (GaussianNB(), {}),  # No hyperparameters to tune
-        "decision_tree": (DecisionTreeClassifier(), {"max_depth": [1, 3, 5, 10, 50, 150]}),
-        "svm": (SVC(), {"kernel": ["linear", "rbf", "poly"], "C": [0.1, 1, 5, 10, 100], "gamma":['scale', 'auto', 0.01, 0.1, 1]},),
-        "logistic_regression": (LogisticRegression(max_iter=5000), {"C": [0.1, 1, 10, 100]}),
+        #"knn": (KNeighborsClassifier(), {"n_neighbors": [3, 5, 7, 9 , 10, 50, 100]}),
+        #"naive_bayes": (GaussianNB(), {}),  # No hyperparameters to tune
+        #"decision_tree": (DecisionTreeClassifier(), {"max_depth": [1, 3, 5, 10, 50, 150]}),
+        #"svm": (SVC(), {"kernel": ["linear", "rbf", "poly"], "C": [0.1, 1, 5, 10, 100], "gamma":['scale', 'auto', 0.01, 0.1, 1]},),
+        #"logistic_regression": (LogisticRegression(max_iter=5000), {"C": [0.1, 1, 10, 100]}),
         "one_versus_one": (OneVsOneClassifier(SVC(probability=True,random_state=42)), {"estimator__kernel": ["linear", "rbf", "poly"], "estimator__C": [0.1, 1, 5, 10, 100], "estimator__gamma":['scale', 'auto', 0.01, 0.1, 1]}),
-        #"one_versus_one": (OneVsOneClassifier(SVC(probability=True,random_state=42)), {'estimator__n_estimators': [50, 100, 200],'estimator__max_depth': [None, 10, 20], 'estimator__min_samples_split': [2, 5, 10],'estimator__min_samples_leaf': [1, 2, 4],'estimator__max_features': ['sqrt', 'log2']}),
+        #"one_versus_rest": (OneVsRestClassifier(SVC(probability=True,random_state=42)), {"estimator__kernel": ["linear", "rbf", "poly"], "estimator__C": [0.1, 1, 5, 10, 100], "estimator__gamma":['scale', 'auto', 0.01, 0.1, 1]}),
         #"random_forest": (RandomForestClassifier(random_state=42), {"n_estimators": [1, 10, 50, 100, 200, 500, 1000, 2000, 2500, 2800], "max_depth": [1, 5, 10, 20, 50, 75]}),
         #"random_forest": (RandomForestClassifier(random_state=42), {"n_estimators": [2000], "max_depth": [10]}),
         #"neural_network": (MLPClassifier(max_iter=5000, random_state=42), {"hidden_layer_sizes": [(20,), (75,), (100,), (125,), (150,)], "activation": ["relu"], "alpha": [0.000025, 0.000075,0.0001]})
@@ -159,7 +159,10 @@ def binary_classifier(data, model_path, emphasis_binary_class = 'true', pred_thr
             predicted_labels.append('other')
     return predicted_labels, binary_labels
 
-def two_stage_classifier(data, labels, model_paths, emphasis_binary_class = 'true', pred_threshold=0.5, accuracy_calc=0):
+def two_stage_classifier(data, labels, model_paths, args, emphasis_binary_class, pred_threshold=0.5):
+    #emphasis_binary_class = args.binary_classes.split(',')
+    #pred_threshold = args.binary_prob_threshold
+    accuracy_calc = args.two_stage_acc_calc
     try:
         emphasis_binary_class.remove('')
     except:
@@ -170,36 +173,41 @@ def two_stage_classifier(data, labels, model_paths, emphasis_binary_class = 'tru
     #Run binary classification first
     load_saved_model(model_paths['binary_classifier_path'], model_params, metric={'accuracy':None})
     predicted_labels = []
-    #binary_predictions = model_params[0].predict(data)
+    if emphasis_binary_class[0]!='skip':
     #Tunned probability thresholds for true class to avoid false positive classification
-    if len(emphasis_binary_class) == 1:
-        binary_labels = model_params[0].classes_
-        emphasis_binary_class_index = np.where(np.array(binary_labels) == emphasis_binary_class)[0][0]
-        y_probs = model_params[0].predict_proba(data)
-    #    threshold = 0.45
-        binary_predictions = (y_probs[:, emphasis_binary_class_index] >= pred_threshold).astype(int)
-        #Load multi-classifier model
-        load_saved_model(model_paths['multi_classifier_path'], model_params, metric={'accuracy':None})
-        i = 0
-        for pred in binary_predictions:
-            if pred == 1: #If binary prediction got it right
-                predicted_labels.append(binary_labels[emphasis_binary_class_index])#labels.iloc[i])#(binary_class)
-            else: #Run multi-class model
-                multi_class_pred = model_params[0].predict(data[i].reshape(1, -1))
-                #multi_class_pred = inference_soft_acc(multi_class_pred, [labels.iloc[i]])
-                predicted_labels.append(multi_class_pred[0])
-            i = i + 1
+        if len(emphasis_binary_class) == 1:
+            binary_labels = model_params[0].classes_
+            emphasis_binary_class_index = np.where(np.array(binary_labels) == emphasis_binary_class)[0][0]
+            y_probs = model_params[0].predict_proba(data)
+        #    threshold = 0.45
+            binary_predictions = (y_probs[:, emphasis_binary_class_index] >= pred_threshold).astype(int)
+            #Load multi-classifier model
+            load_saved_model(model_paths['multi_classifier_path'], model_params, metric={'accuracy':None})
+            i = 0
+            for pred in binary_predictions:
+                if pred == 1: #If binary prediction got it right
+                    predicted_labels.append(binary_labels[emphasis_binary_class_index])#labels.iloc[i])#(binary_class)
+                else: #Run multi-class model
+                    multi_class_pred = model_params[0].predict(data[i].reshape(1, -1))
+                    #multi_class_pred = inference_soft_acc(multi_class_pred, [labels.iloc[i]])
+                    predicted_labels.append(multi_class_pred[0])
+                i = i + 1
+        else:
+            binary_predictions = model_params[0].predict(data)
+            load_saved_model(model_paths['multi_classifier_path'], model_params, metric={'accuracy':None})
+            i = 0
+            for pred in binary_predictions:
+                if pred in emphasis_binary_class: #If prediction is one of the emphasis classes, got it right
+                    predicted_labels.append(pred)#labels.iloc[i])#(binary_class)
+                else: #Run multi-class model
+                    multi_class_pred = model_params[0].predict(data[i].reshape(1, -1))
+                    predicted_labels.append(multi_class_pred[0])
+                i = i + 1
+    #If skipping binary_classifier, refer back to a single stage model
     else:
-        binary_predictions = model_params[0].predict(data)
         load_saved_model(model_paths['multi_classifier_path'], model_params, metric={'accuracy':None})
-        i = 0
-        for pred in binary_predictions:
-            if pred in emphasis_binary_class: #If prediction is one of the emphasis classes, got it right
-                predicted_labels.append(pred)#labels.iloc[i])#(binary_class)
-            else: #Run multi-class model
-                multi_class_pred = model_params[0].predict(data[i].reshape(1, -1))
-                predicted_labels.append(multi_class_pred[0])
-            i = i + 1
+        model_classes = list(model_params[0].classes_) 
+        predicted_labels = model_params[0].predict(data)
     #predicted_labels = inference_soft_acc(labels, predicted_labels)
     if accuracy_calc:
         predicted_labels = inference_soft_acc(labels, predicted_labels)
@@ -207,7 +215,12 @@ def two_stage_classifier(data, labels, model_paths, emphasis_binary_class = 'tru
         print("Classification Report:\n", report)
         #Enable the lines below to display confusion matrix
         cm = confusion_matrix(labels, predicted_labels)
-        model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'true']
+        model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'pants-fire', 'true']
+        if args.five_classes:
+            model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'true']
+        if args.four_classes:
+            model_classes = ['barely-true', 'false', 'half-true', 'true']
+        #model_classes = model_params[0].classes_
         disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=model_classes)
         disp.plot()
     return predicted_labels
@@ -231,16 +244,17 @@ def inference(original_data, args, binary_class = 'true'):
     grid_search = None
     model_params = [best_classifier, grid_search]    
     if args.model_type == 'two_stage_classifier' or args.model_type == 'voting_model':
+        model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'pants-fire', 'true']
         if args.four_classes:
             model_classes = ['barely-true', 'false', 'half-true', 'true']
-        else:
+        if args.five_classes:
             model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'true']
         model_paths = {'binary_classifier_path':args.binary_classifier_path, 'multi_classifier_path':args.multi_classifier_path}
-        model1_predicted_labels = two_stage_classifier(data, labels, model_paths, args.binary_classes.split(','), args.binary_prob_threshold, args.two_stage_acc_calc)    
+        model1_predicted_labels = two_stage_classifier(data, labels, model_paths, args, args.binary_classes.split(','), args.binary_prob_threshold)    
         predicted_labels = model1_predicted_labels 
         if args.model_type == 'voting_model':
             model_paths = {'binary_classifier_path':args.second_binary_classifier_path, 'multi_classifier_path':args.multi_classifier2_path}
-            model2_predicted_labels = two_stage_classifier(data, labels, model_paths, args.second_binary_classes.split(','), args.second_binary_prob_threshold, args.two_stage_acc_calc)
+            model2_predicted_labels = two_stage_classifier(data, labels, model_paths, args, args.second_binary_classes.split(','), args.second_binary_prob_threshold)
             predicted_labels = voting_heuristic(model1_predicted_labels, model2_predicted_labels, args)
 
     else:
@@ -304,8 +318,8 @@ def training(original_data, args):
         else:
             best_classifier = classifier
         cv_scores = cross_val_score(best_classifier, data_scaled, labels, cv=6, scoring='accuracy')
-        #metric = cv_scores.mean()
-        metric = cv_scores.max()
+        metric = cv_scores.mean()
+        #metric = cv_scores.max()
         if metric > stored_cv_scores:
             chosen_classifier = {'classifier_model': trial_classifier, 'classifier': grid_search, 'scores':cv_scores}
             stored_cv_scores = metric
@@ -324,8 +338,10 @@ def training(original_data, args):
 def data_preprocessing(original_data, args):
     binary_class = args.binary_classes.split(',')
     #Merging pant-fire and false
-    original_data.loc[original_data.label=='pants-fire', ['label']] = 'false'  
+    if args.five_classes:
+        original_data.loc[original_data.label=='pants-fire', ['label']] = 'false'  
     if args.four_classes:
+        original_data.loc[original_data.label=='pants-fire', ['label']] = 'false'
         original_data.loc[original_data.label=='mostly-true', ['label']] = 'true'
     original_data = construct_features(original_data)
     #remove duplicate claims if there are any
@@ -412,6 +428,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_type', type=str, default=None, help="Supported options:binary_classifier, regular_multiclassifier, multiclassifier_except_oneclass, two_stage_classifier, voting_model")
     parser.add_argument('--inference', type=int, default=0)
     parser.add_argument('--two_stage_acc_calc', type=int, default=0)
+    parser.add_argument('--five_classes', type=int, default=0)
     parser.add_argument('--four_classes', type=int, default=0)
     parser.add_argument('--three_classes', type=int, default=0)
     parser.add_argument('--SMOTE_type', type=str, default='all', help="Supported options: minority, not minority, not majority, all")
