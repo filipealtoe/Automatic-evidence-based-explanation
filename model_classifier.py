@@ -32,14 +32,14 @@ classifiers = {
         #"decision_tree": (DecisionTreeClassifier(), {"max_depth": [1, 3, 5, 10, 50, 150]}),
         #"svm": (SVC(), {"kernel": ["linear", "rbf", "poly"], "C": [0.1, 1, 5, 10, 100], "gamma":['scale', 'auto', 0.01, 0.1, 1]},),
         #"logistic_regression": (LogisticRegression(max_iter=5000), {"C": [0.1, 1, 10, 100]}),
-        "one_versus_one": (OneVsOneClassifier(SVC(probability=True,random_state=42)), {"estimator__kernel": ["linear", "rbf", "poly"], "estimator__C": [0.1, 1, 5, 10, 100], "estimator__gamma":['scale', 'auto', 0.01, 0.1, 1]}),
+        #"one_versus_one": (OneVsOneClassifier(SVC(probability=True,random_state=42)), {"estimator__kernel": ["linear", "rbf", "poly"], "estimator__C": [0.1, 1, 5, 10, 100], "estimator__gamma":['scale', 'auto', 0.01, 0.1, 1]}),
         #"one_versus_rest": (OneVsRestClassifier(SVC(probability=True,random_state=42)), {"estimator__kernel": ["linear", "rbf", "poly"], "estimator__C": [0.1, 1, 5, 10, 100], "estimator__gamma":['scale', 'auto', 0.01, 0.1, 1]}),
         #"random_forest": (RandomForestClassifier(random_state=42), {"n_estimators": [1, 10, 50, 100, 200, 500, 1000, 2000, 2500, 2800], "max_depth": [1, 5, 10, 20, 50, 75]}),
         #"random_forest": (RandomForestClassifier(random_state=42), {"n_estimators": [2000], "max_depth": [10]}),
         #"neural_network": (MLPClassifier(max_iter=5000, random_state=42), {"hidden_layer_sizes": [(20,), (75,), (100,), (125,), (150,)], "activation": ["relu"], "alpha": [0.000025, 0.000075,0.0001]})
-        #"xgboost": (XGBClassifier(use_label_encoder=False, eval_metric='mlogloss'), {"n_estimators": randint(10, 200), "max_depth": randint(3, 10), "learning_rate": uniform(0.01, 0.3)}),
-        #"lightgbm": (LGBMClassifier(), {"n_estimators": randint(10, 200), "max_depth": randint(3, 10), "learning_rate": uniform(0.01, 0.3)}),
-        #"catboost": (CatBoostClassifier(verbose=0), {"iterations": randint(10, 200), "depth": randint(3, 10), "learning_rate": uniform(0.01, 0.3)}),
+        "xgboost": (XGBClassifier(use_label_encoder=False, eval_metric='mlogloss', random_state=42, objective='multi:softprob'), {"n_estimators": [50, 100, 200], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.1, 0.2], 'subsample': [0.8, 1.0], 'colsample_bytree': [0.8, 1.0]}),
+        #"lightgbm": (LGBMClassifier(random_state=42), {"n_estimators": [50, 100, 200], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.1, 0.2], 'num_leaves': [15, 31, 63],'subsample': [0.8, 1.0],'min_child_samples': [10, 20, 50],'min_data_in_leaf': [10, 20, 50]}),
+        #"catboost": (CatBoostClassifier(verbose=0, random_state=42), {"iterations": [50, 100, 200], "depth": [3, 5, 7], "learning_rate": [0.01, 0.1, 0.2]}),
         #"neural_network": (MLPClassifier(max_iter=5000, random_state=42), {"hidden_layer_sizes": [(10,), (20,), (50,), (100,), (10, 10)], "activation": ["relu", "tanh"], "alpha": [0.00005, 0.0001, 0.001, 0.01]})
     }
 
@@ -129,7 +129,7 @@ def inference_soft_acc(labels, predicted_labels):
     return predicted_labels
 
 def feature_engineering(data, args):
-    if False:
+    if args.feature_engineering:
         from sklearn.cluster import KMeans
         kmeans = KMeans(n_clusters=5, random_state=42)
         cluster_labels = kmeans.fit_predict(data).reshape(-1, 1)
@@ -210,11 +210,12 @@ def two_stage_classifier(data, labels, model_paths, args, emphasis_binary_class,
         predicted_labels = model_params[0].predict(data)
     #predicted_labels = inference_soft_acc(labels, predicted_labels)
     if accuracy_calc:
-        predicted_labels = inference_soft_acc(labels, predicted_labels)
-        report = classification_report(labels, predicted_labels)
+        predicted_labels_int = predicted_labels.copy()
+        predicted_labels_int = inference_soft_acc(labels, predicted_labels_int)
+        report = classification_report(labels, predicted_labels_int)
         print("Classification Report:\n", report)
         #Enable the lines below to display confusion matrix
-        cm = confusion_matrix(labels, predicted_labels)
+        cm = confusion_matrix(labels, predicted_labels_int)
         model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'pants-fire', 'true']
         if args.five_classes:
             model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'true']
@@ -236,6 +237,33 @@ def voting_heuristic(model1_labels, model2_labels, args):
         if not model1_labels[i] in model1_winning_classes:
             predicted_labels[i] = model2_labels[i]
     return predicted_labels
+
+def claim_analysis(confusion_matrix, classes, labels, predicted_labels):
+    original_dataset_path = args.test_file_path.split('.csv')[0] + '.jsonl'
+    original_dataset = pd.read_json(original_dataset_path, lines=True)
+    results = {}
+    for cls in classes:
+        # True Positives
+        tp_indices = np.where((labels.values == cls) & (predicted_labels== cls))[0]
+        
+        # False Positives
+        fp_indices = np.where((labels.values != cls) & (predicted_labels == cls))[0]
+        
+        # False Negatives
+        fn_indices = np.where((labels.values == cls) & (predicted_labels != cls))[0]
+        
+        # True Negatives
+        tn_indices = np.where((labels.values != cls) & (predicted_labels != cls))[0]
+        
+        # Store results
+        results[cls] = {
+            'True Positives': tp_indices,
+            'False Positives': fp_indices,
+            'False Negatives': fn_indices,
+            'True Negatives': tn_indices
+        }
+
+    return
 
 def inference(original_data, args, binary_class = 'true'):
     binary_class = args.binary_classes.split(',')[0]
@@ -296,6 +324,8 @@ def inference(original_data, args, binary_class = 'true'):
     cm = confusion_matrix(labels, predicted_labels)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=model_classes)
     disp.plot()
+    if args.claim_analysis:
+        claim_analysis(cm, model_classes, labels, predicted_labels)
     return
 
 def training(original_data, args):
@@ -346,6 +376,9 @@ def data_preprocessing(original_data, args):
     original_data = construct_features(original_data)
     #remove duplicate claims if there are any
     original_data = original_data.drop_duplicates(subset=['claim'])
+    #DeleteMe#####
+    #test1 = [26,28,31,41,45,47,53,54]
+    #original_data = original_data.drop(test1)
     #Dropping binary_class
     if args.model_type == 'multiclassifier_except_binaryclass':
         #original_data = original_data.drop(original_data[original_data['label'] == binary_class].index)
@@ -428,6 +461,8 @@ if __name__ == '__main__':
     parser.add_argument('--model_type', type=str, default=None, help="Supported options:binary_classifier, regular_multiclassifier, multiclassifier_except_binaryclass, two_stage_classifier, voting_model")
     parser.add_argument('--inference', type=int, default=0)
     parser.add_argument('--two_stage_acc_calc', type=int, default=0)
+    parser.add_argument('--feature_engineering', type=int, default=0)
+    parser.add_argument('--claim_analysis', type=int, default=0)
     parser.add_argument('--five_classes', type=int, default=0)
     parser.add_argument('--four_classes', type=int, default=0)
     parser.add_argument('--three_classes', type=int, default=0)
