@@ -94,7 +94,8 @@ class WebRetriever:
         if engine == 'bing':
             #self.subscription_key = os.environ[
                 #'BING_SEARCH_V7_SUBSCRIPTION_KEY']
-            self.subscription_key = "4eb55afbffd34ae9943c95a15da944b0"
+            #self.subscription_key = "4eb55afbffd34ae9943c95a15da944b0"
+            self.subscription_key = os.getenv("BING_API_KEY")
             #self.endpoint = os.environ['BING_SEARCH_V7_ENDPOINT']
             self.endpoint = "https://api.bing.microsoft.com/v7.0/search"
             self.mkt = 'en-US'
