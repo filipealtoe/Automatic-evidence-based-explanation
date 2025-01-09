@@ -19,6 +19,7 @@ from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.preprocessing import PolynomialFeatures, normalize
 from sklearn.metrics import classification_report, accuracy_score
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.preprocessing import LabelEncoder
 from imblearn.over_sampling import SMOTE
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
@@ -124,6 +125,9 @@ def inference_soft_acc(labels, predicted_labels):
                 predicted_labels[i] = labels.iloc[i]
             except:
                 predicted_labels[i] = labels[i]
+        else:
+            if type(predicted_labels[i]) != str:
+                predicted_labels[i] = predicted_labels[i][0]
         i = i + 1
 
     return predicted_labels
@@ -159,9 +163,10 @@ def binary_classifier(data, model_path, emphasis_binary_class = 'true', pred_thr
             predicted_labels.append('other')
     return predicted_labels, binary_labels
 
-def two_stage_classifier(data, labels, model_paths, args, emphasis_binary_class, pred_threshold=0.5):
+def two_stage_classifier(original_data, labels, model_paths, args, emphasis_binary_class, pred_threshold=0.5):
     #emphasis_binary_class = args.binary_classes.split(',')
     #pred_threshold = args.binary_prob_threshold
+    data, labels = data_preprocessing(original_data, args)
     accuracy_calc = args.two_stage_acc_calc
     try:
         emphasis_binary_class.remove('')
@@ -183,31 +188,59 @@ def two_stage_classifier(data, labels, model_paths, args, emphasis_binary_class,
             binary_predictions = (y_probs[:, emphasis_binary_class_index] >= pred_threshold).astype(int)
             #Load multi-classifier model
             load_saved_model(model_paths['multi_classifier_path'], model_params, metric={'accuracy':None})
+            #If model has numeric classes
+            labels_encoded = 0
+            model_classes = list(model_params[0].classes_) 
+            if type(model_classes[0]) != str:
+                original_labels = labels.copy()
+                labels_encoded = 1
+                multiclass_data, new_labels, encoded_labels, label_encoder_obj = encode_labels(original_data, args)
+            else:
+                multiclass_data = data
             i = 0
             for pred in binary_predictions:
                 if pred == 1: #If binary prediction got it right
                     predicted_labels.append(binary_labels[emphasis_binary_class_index])#labels.iloc[i])#(binary_class)
                 else: #Run multi-class model
-                    multi_class_pred = model_params[0].predict(data[i].reshape(1, -1))
-                    #multi_class_pred = inference_soft_acc(multi_class_pred, [labels.iloc[i]])
+                    multi_class_pred = model_params[0].predict(multiclass_data[i].reshape(1, -1))
+                    if labels_encoded:
+                        multi_class_pred = label_encoder_obj.inverse_transform(multi_class_pred)
                     predicted_labels.append(multi_class_pred[0])
                 i = i + 1
         else:
             binary_predictions = model_params[0].predict(data)
             load_saved_model(model_paths['multi_classifier_path'], model_params, metric={'accuracy':None})
+            #If model has numeric classes
+            model_classes = list(model_params[0].classes_) 
+            labels_encoded = 0
+            if type(model_classes[0]) != str:
+                original_labels = labels.copy()
+                labels_encoded = 1
+                multiclass_data, new_labels, encoded_labels, label_encoder_obj = encode_labels(original_data, args)
+            else:
+                multiclass_data = data
             i = 0
             for pred in binary_predictions:
                 if pred in emphasis_binary_class: #If prediction is one of the emphasis classes, got it right
                     predicted_labels.append(pred)#labels.iloc[i])#(binary_class)
                 else: #Run multi-class model
-                    multi_class_pred = model_params[0].predict(data[i].reshape(1, -1))
+                    multi_class_pred = model_params[0].predict(multiclass_data[i].reshape(1, -1))
+                    if labels_encoded:
+                        multi_class_pred = label_encoder_obj.inverse_transform(multi_class_pred)
                     predicted_labels.append(multi_class_pred[0])
                 i = i + 1
     #If skipping binary_classifier, refer back to a single stage model
     else:
+        labels_encoded = 0
         load_saved_model(model_paths['multi_classifier_path'], model_params, metric={'accuracy':None})
         model_classes = list(model_params[0].classes_) 
+        if type(model_classes[0]) != str:
+            original_labels = labels.copy()
+            labels_encoded = 1
+            data, new_labels, encoded_labels, label_encoder_obj = encode_labels(original_data, args)
         predicted_labels = model_params[0].predict(data)
+        if labels_encoded:
+            predicted_labels = label_encoder_obj.inverse_transform(predicted_labels)
     #predicted_labels = inference_soft_acc(labels, predicted_labels)
     if accuracy_calc:
         predicted_labels_int = predicted_labels.copy()
@@ -266,6 +299,7 @@ def claim_analysis(confusion_matrix, classes, labels, predicted_labels):
     return
 
 def inference(original_data, args, binary_class = 'true'):
+    labels_encoded = 0
     binary_class = args.binary_classes.split(',')[0]
     data, labels = data_preprocessing(original_data, args)
     best_classifier = None
@@ -278,11 +312,11 @@ def inference(original_data, args, binary_class = 'true'):
         if args.five_classes:
             model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'true']
         model_paths = {'binary_classifier_path':args.binary_classifier_path, 'multi_classifier_path':args.multi_classifier_path}
-        model1_predicted_labels = two_stage_classifier(data, labels, model_paths, args, args.binary_classes.split(','), args.binary_prob_threshold)    
+        model1_predicted_labels = two_stage_classifier(original_data, labels, model_paths, args, args.binary_classes.split(','), args.binary_prob_threshold)    
         predicted_labels = model1_predicted_labels 
         if args.model_type == 'voting_model':
             model_paths = {'binary_classifier_path':args.second_binary_classifier_path, 'multi_classifier_path':args.multi_classifier2_path}
-            model2_predicted_labels = two_stage_classifier(data, labels, model_paths, args, args.second_binary_classes.split(','), args.second_binary_prob_threshold)
+            model2_predicted_labels = two_stage_classifier(original_data, labels, model_paths, args, args.second_binary_classes.split(','), args.second_binary_prob_threshold)
             predicted_labels = voting_heuristic(model1_predicted_labels, model2_predicted_labels, args)
 
     else:
@@ -291,6 +325,11 @@ def inference(original_data, args, binary_class = 'true'):
                 model_file = args.multi_classifier_path
                 load_saved_model(args.multi_classifier_path, model_params, metric={'accuracy':None})
                 model_classes = list(model_params[0].classes_) 
+                #If model has numeric classes
+                if type(model_classes[0]) != str:
+                    original_labels = labels.copy()
+                    labels_encoded = 1
+                    data, labels, encoded_labels, label_encoder_obj = encode_labels(original_data, args)
                 predicted_labels = model_params[0].predict(data)
             elif args.model_type == 'binary_classifier': 
                 model_file = args.binary_classifier_path
@@ -312,6 +351,9 @@ def inference(original_data, args, binary_class = 'true'):
                
         #predicted_labels = model_params[0].predict(data)
         #Only applies soft accuracy if its is a truly multiclassification model
+    if labels_encoded:
+        labels = original_labels.copy()
+        predicted_labels = label_encoder_obj.inverse_transform(predicted_labels)
     if len(model_classes) > 3:
         predicted_labels = inference_soft_acc(labels, predicted_labels)
         # Calculate accuracy
@@ -328,11 +370,22 @@ def inference(original_data, args, binary_class = 'true'):
         claim_analysis(cm, model_classes, labels, predicted_labels)
     return
 
+def encode_labels(dataset, args):
+    numb_lab_original_data = dataset.copy()
+    label_encoder = LabelEncoder()
+    y_encoded = label_encoder.fit_transform(numb_lab_original_data['label'])    
+    numb_lab_original_data['label'] = y_encoded
+    data_scaled, labels = data_preprocessing(numb_lab_original_data, args)
+    return data_scaled, labels, y_encoded, label_encoder
+
+
 def training(original_data, args):
     data_scaled, labels = data_preprocessing(original_data, args)
     all_classifiers = list(classifiers.keys())
     stored_cv_scores = 0
     for trial_classifier in all_classifiers:
+        if trial_classifier == 'xgboost':
+            data_scaled, labels, encoded_labels = encode_labels(original_data, args)
         # Initialize the classifier
         classifier_and_params = get_classifier_and_params(trial_classifier, classifiers)
         if classifier_and_params is None:
