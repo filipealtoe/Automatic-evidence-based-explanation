@@ -25,6 +25,7 @@ from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from catboost import CatBoostClassifier
 from scipy.stats import randint, uniform
+import matplotlib.pyplot as plt
 
 CLASSIFIER = "logistic_regression"
 classifiers = {
@@ -271,31 +272,106 @@ def voting_heuristic(model1_labels, model2_labels, args):
             predicted_labels[i] = model2_labels[i]
     return predicted_labels
 
-def claim_analysis(confusion_matrix, classes, labels, predicted_labels):
-    original_dataset_path = args.test_file_path.split('.csv')[0] + '.jsonl'
-    original_dataset = pd.read_json(original_dataset_path, lines=True)
+def plot_charts(results, output_file):
+    """
+    Plots multiple pie charts for each category of each class showing the percentages of subcategories.
+    Saves the data for all classes into a single CSV file.
+    
+    Args:
+    - results (dict): A dictionary where keys are class labels and values are
+                      dictionaries with keys 'True Positives', 'False Positives',
+                      'False Negatives', and 'True Negatives'. Each category contains a list
+                      of subcategories.
+    - output_file (str): Path to the combined CSV file.
+    """
+    # Initialize an empty list to store data for all classes
+    all_data = []
+    
+    for cls, categories in results.items():
+        # Create a subplot for each category
+        fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+        fig.suptitle(f"Class {cls} - Distribution of Subcategories by Category", fontsize=16)
+        
+        # Flatten the axes for easier iteration
+        axes = axes.flatten()
+        
+        # Iterate over the categories
+        for i, (category, subcategories) in enumerate(categories.items()):
+            # Count the number of elements in each subcategory
+            subcategory_counts = {}
+            for subcategory in subcategories:
+                subcategory_counts[subcategory] = subcategory_counts.get(subcategory, 0) + 1
+            
+            # Compute total and percentages
+            total = sum(subcategory_counts.values())
+            labels = list(subcategory_counts.keys())
+            sizes = [(count / total) * 100 for count in subcategory_counts.values()]
+            
+            # Append data to the combined list
+            for label, count, percentage in zip(labels, subcategory_counts.values(), sizes):
+                all_data.append({
+                    "Class": cls,
+                    "Category": category,
+                    "Subcategory": label,
+                    "Count": count,
+                    "Percentage": percentage
+                })
+            
+            # Plot pie chart
+            ax = axes[i]
+            ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
+            ax.set_title(category)
+            ax.axis('equal')  # Equal aspect ratio for a circular pie chart
+        
+        # Adjust layout and show the plot
+        plt.tight_layout(rect=[0, 0, 1, 0.95])  # Leave space for the main title
+        plt.show()
+    
+    # Save all data to a single CSV file
+    df = pd.DataFrame(all_data)
+    df.to_csv(output_file, index=False)
+    return
+
+def claim_analysis(test_dataset, args, classes, labels, predicted_labels):
+    test_file_path = os.path.join(os.path.dirname(args.test_file_path), 'datasets', os.path.basename(args.test_file_path).split('.')[0] + '.jsonl')
+    stats_file_path = os.path.join(os.path.dirname(args.test_file_path), 'stats', os.path.basename(args.test_file_path).split('.')[0] + '_stats.csv')
+    original_dataset = pd.read_json(test_file_path, lines=True)
     results = {}
     for cls in classes:
         # True Positives
-        tp_indices = np.where((labels.values == cls) & (predicted_labels== cls))[0]
+        tp_indices = ((labels.values == cls) & (predicted_labels== cls)[:,0])
+
+        indices = np.where(tp_indices == True)
+        claims = test_dataset.iloc[indices]['claim']
+        tp_categories = original_dataset.loc[original_dataset['claim'].isin(claims)][args.stats_parameter]
         
         # False Positives
-        fp_indices = np.where((labels.values != cls) & (predicted_labels == cls))[0]
+        fp_indices = ((labels.values != cls) & (predicted_labels == cls)[:,0])
+        indices = np.where(fp_indices == True)
+        claims = test_dataset.iloc[indices]['claim']
+        fp_categories = original_dataset.loc[original_dataset['claim'].isin(claims)][args.stats_parameter]
         
         # False Negatives
-        fn_indices = np.where((labels.values == cls) & (predicted_labels != cls))[0]
+        fn_indices = ((labels.values == cls) & (predicted_labels != cls)[:,0])
+        indices = np.where(fn_indices == True)
+        claims = test_dataset.iloc[indices]['claim']
+        fn_categories = original_dataset.loc[original_dataset['claim'].isin(claims)][args.stats_parameter]
         
         # True Negatives
-        tn_indices = np.where((labels.values != cls) & (predicted_labels != cls))[0]
+        tn_indices = ((labels.values != cls) & (predicted_labels != cls)[:,0])
+        indices = np.where(tn_indices == True)
+        claims = test_dataset.iloc[indices]['claim']
+        tn_categories = original_dataset.loc[original_dataset['claim'].isin(claims)][args.stats_parameter]
         
         # Store results
         results[cls] = {
-            'True Positives': tp_indices,
-            'False Positives': fp_indices,
-            'False Negatives': fn_indices,
-            'True Negatives': tn_indices
+            'True Positives': tp_categories,
+            'False Positives': fp_categories,
+            'False Negatives': fn_categories,
+            'True Negatives': tn_categories
         }
 
+    plot_charts(results, stats_file_path)
     return
 
 def inference(original_data, args, binary_class = 'true'):
@@ -366,8 +442,8 @@ def inference(original_data, args, binary_class = 'true'):
     cm = confusion_matrix(labels, predicted_labels)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=model_classes)
     disp.plot()
-    if args.claim_analysis:
-        claim_analysis(cm, model_classes, labels, predicted_labels)
+    if args.generate_stats:
+        claim_analysis(args.processed_dataset, args, model_classes, labels, predicted_labels)
     return
 
 def encode_labels(dataset, args):
@@ -429,6 +505,8 @@ def data_preprocessing(original_data, args):
     original_data = construct_features(original_data)
     #remove duplicate claims if there are any
     original_data = original_data.drop_duplicates(subset=['claim'])
+    if args.generate_stats:
+        args.processed_dataset = original_data
     #DeleteMe#####
     #test1 = [26,28,31,41,45,47,53,54]
     #original_data = original_data.drop(test1)
@@ -519,6 +597,8 @@ if __name__ == '__main__':
     parser.add_argument('--five_classes', type=int, default=0)
     parser.add_argument('--four_classes', type=int, default=0)
     parser.add_argument('--three_classes', type=int, default=0)
+    parser.add_argument('--generate_stats', type=int, default=0)
+    parser.add_argument('--stats_parameter', type=str, default=None)
     parser.add_argument('--SMOTE_type', type=str, default='all', help="Supported options: minority, not minority, not majority, all")
     args = parser.parse_args()
     main(args)
