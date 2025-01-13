@@ -162,25 +162,26 @@ def count_matches(golden_categories, categorization):
 
 def main(args):
     df = pd.read_json(args.input_path, lines=True)
+    #remove duplicate claims if there are any
+    df = df.drop_duplicates(subset=['claim'])
     start = 0 if not args.start else args.start
     end = len(df) if not args.end else args.end
     if args.include_first_category:
         df['category'] = ['Politics'] * end
     llm = ChatOpenAI(temperature = 0.7, model = ENGINE, api_key = api_key, max_tokens = 128, max_retries = MAX_GPT_CALLS)
     subcategories = []
-    categories = []
     start_time = time.time()
-    for i in tqdm(range(start, end)):
-        try:
-            claim = df.iloc[i]['claim']
-            prompt_params={'numbed_of_questions':MAX_NUM_QUESTIONS}
-            response = promptLLM(llm, func_prompts, claim, start_time=start_time, prompt_params=prompt_params)
-            print(response.content)
-            subcategories.append(response.content)
-        except Exception as e:
-            print("error caught", e)
-            print('i=', i)
     if args.include_subcategory:
+        for i in tqdm(range(start, end)):
+            try:
+                claim = df.iloc[i]['claim']
+                prompt_params={'numbed_of_questions':MAX_NUM_QUESTIONS}
+                response = promptLLM(llm, func_prompts, claim, start_time=start_time, prompt_params=prompt_params)
+                print(response.content)
+                subcategories.append(response.content)
+            except Exception as e:
+                print("error caught", e)
+                print('i=', i)
         df['subcategory'] = subcategories
     if args.check_matches:
         accuracy = count_matches(df['subcategory'], subcategories)
