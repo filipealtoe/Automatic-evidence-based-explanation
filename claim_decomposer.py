@@ -117,7 +117,8 @@ def extract_claim_date(claim_context, time_offset):
     if res:
         month, day, year = res[0]
         if int(day) < 10:
-            day = '0' + day
+            if len(day) < 2:
+                day = '0' + day
         date_str = "{}-{}-{}".format(year, MONTH_MAPPING[month], day)
         date_obj = datetime.strptime(date_str, "%Y-%m-%d")
         # add offset to the date so that we can experiment with different time constraints
