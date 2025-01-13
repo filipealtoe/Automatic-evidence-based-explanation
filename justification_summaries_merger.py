@@ -126,35 +126,38 @@ def main(args):
                 all_rows.append(row_info.copy())
                 row_info['decomposed_justification'] = None
                 row_info['decomposed_question'] = None 
-                k = k + 1        
-            merged_justification = ''.join(justifications)
-            prompt_params = {'decomposed_justification':decomposed_search_hit['decomposed_justification'],
-                                'question': decomposed_search_hit['decomposed_question']}
-            try:
-                response = promptLLM(llm, func_prompts, merged_justification, start_time=start_time, prompt_params=prompt_params)
-                skip_response = 0
-            except Exception as e:
-                response_text = ""
-                print("error caught", e)
-                print('Dataset row = ', i)
-                print('Pages Info index = ', j)
-                print('Page index = ', k)
-                print('Decomposed Question: ', decomposed_search_hit['decomposed_question'])
-                print('Decomposed Justification: ', decomposed_search_hit['decomposed_justification'])          
-                print('Page name: ', page_info['page_name']) 
-                print('Page url: ', page_info['page_url'])
-                skip_response = 1
-            if not skip_response:
+                k = k + 1       
+            if len(justifications)!= 0:
+                merged_justification = ''.join(justifications)
+                prompt_params = {'decomposed_justification':decomposed_search_hit['decomposed_justification'],
+                                    'question': decomposed_search_hit['decomposed_question']}
                 try:
-                    response_text = response.content
-                except:
-                    response_text = response['output_text']
-                skip_response = 0  
-            #all_rows[justification_summary_line]['justification_summary'] = response_text
-            #all_rows[justification_summary_line]['summary_number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])   
-            all_rows[-1]['justification_summary'] = response_text
-            all_rows[-1]['summary_number_of_tokens'] = llm.get_num_tokens(response_text)        
-            justifications = []
+                    response = promptLLM(llm, func_prompts, merged_justification, start_time=start_time, prompt_params=prompt_params)
+                    skip_response = 0
+                except Exception as e:
+                    response_text = ""
+                    print("error caught", e)
+                    print('Dataset row = ', i)
+                    print('Pages Info index = ', j)
+                    print('Page index = ', k)
+                    print('Decomposed Question: ', decomposed_search_hit['decomposed_question'])
+                    print('Decomposed Justification: ', decomposed_search_hit['decomposed_justification'])          
+                    print('Page name: ', page_info['page_name']) 
+                    print('Page url: ', page_info['page_url'])
+                    skip_response = 1
+                if not skip_response:
+                    try:
+                        response_text = response.content
+                    except:
+                        response_text = response['output_text']
+                    skip_response = 0  
+                #all_rows[justification_summary_line]['justification_summary'] = response_text
+                #all_rows[justification_summary_line]['summary_number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])   
+                all_rows[-1]['justification_summary'] = response_text
+                all_rows[-1]['summary_number_of_tokens'] = llm.get_num_tokens(response_text)        
+                justifications = []
+            else:
+                response_text = 'No justification created'
             decomposed_search_hit['decomposed_justification_explanation'] = response_text
             j = j + 1
         
