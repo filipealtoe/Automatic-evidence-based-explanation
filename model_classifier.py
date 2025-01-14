@@ -4,6 +4,7 @@ import pandas as pd
 import os
 import time
 import pickle
+import re
 from sklearn.model_selection import cross_val_score, GridSearchCV, RandomizedSearchCV
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KNeighborsClassifier
@@ -35,11 +36,10 @@ classifiers = {
         #"svm": (SVC(), {"kernel": ["linear", "rbf", "poly"], "C": [0.1, 1, 5, 10, 100], "gamma":['scale', 'auto', 0.01, 0.1, 1]},),
         #"logistic_regression": (LogisticRegression(max_iter=5000), {"C": [0.1, 1, 10, 100]}),
         #"one_versus_one": (OneVsOneClassifier(SVC(probability=True,random_state=42)), {"estimator__kernel": ["linear", "rbf", "poly"], "estimator__C": [0.1, 1, 5, 10, 100], "estimator__gamma":['scale', 'auto', 0.01, 0.1, 1]}),
-        #"one_versus_rest": (OneVsRestClassifier(SVC(probability=True,random_state=42)), {"estimator__kernel": ["linear", "rbf", "poly"], "estimator__C": [0.1, 1, 5, 10, 100], "estimator__gamma":['scale', 'auto', 0.01, 0.1, 1]}),
+        "one_versus_rest": (OneVsRestClassifier(SVC(probability=True,random_state=42)), {"estimator__kernel": ["linear", "rbf", "poly"], "estimator__C": [0.1, 1, 5, 10, 100], "estimator__gamma":['scale', 'auto', 0.01, 0.1, 1]}),
         #"random_forest": (RandomForestClassifier(random_state=42), {"n_estimators": [1, 10, 50, 100, 200, 500, 1000, 2000, 2500, 2800], "max_depth": [1, 5, 10, 20, 50, 75]}),
-        #"random_forest": (RandomForestClassifier(random_state=42), {"n_estimators": [2000], "max_depth": [10]}),
         #"neural_network": (MLPClassifier(max_iter=5000, random_state=42), {"hidden_layer_sizes": [(20,), (75,), (100,), (125,), (150,)], "activation": ["relu"], "alpha": [0.000025, 0.000075,0.0001]})
-        "xgboost": (XGBClassifier(use_label_encoder=False, eval_metric='mlogloss', random_state=42, objective='multi:softprob'), {"n_estimators": [50, 100, 200], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.1, 0.2], 'subsample': [0.8, 1.0], 'colsample_bytree': [0.8, 1.0]}),
+        #"xgboost": (XGBClassifier(use_label_encoder=False, eval_metric='mlogloss', random_state=42, objective='multi:softprob'), {"n_estimators": [50, 100, 200], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.1, 0.2], 'subsample': [0.8, 1.0], 'colsample_bytree': [0.8, 1.0]}),
         #"lightgbm": (LGBMClassifier(random_state=42), {"n_estimators": [50, 100, 200], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.1, 0.2], 'num_leaves': [15, 31, 63],'subsample': [0.8, 1.0],'min_child_samples': [10, 20, 50],'min_data_in_leaf': [10, 20, 50]}),
         #"catboost": (CatBoostClassifier(verbose=0, random_state=42), {"iterations": [50, 100, 200], "depth": [3, 5, 7], "learning_rate": [0.01, 0.1, 0.2]}),
         #"neural_network": (MLPClassifier(max_iter=5000, random_state=42), {"hidden_layer_sizes": [(10,), (20,), (50,), (100,), (10, 10)], "activation": ["relu", "tanh"], "alpha": [0.00005, 0.0001, 0.001, 0.01]})
@@ -107,7 +107,14 @@ def load_saved_model(pickle_file, model_params=[], metric={}):
         metric = pickle.load(pickle_file)
     pickle_file.close()
 
-def inference_soft_acc(labels, predicted_labels):
+def inference_soft_acc(labels, predicted_labels, model_classes):
+    if type(model_classes[0]) != str and type(model_classes[0]) != np.str_:
+        labels_num = labels.copy()
+        predicted_labels_num = predicted_labels.copy()
+    else:
+        labels_num = labels
+        predicted_labels_num = predicted_labels
+    '''
     try:
         labels_num = labels.copy()
     except:
@@ -116,6 +123,7 @@ def inference_soft_acc(labels, predicted_labels):
         predicted_labels_num = predicted_labels.copy()
     except:
         predicted_labels_num = predicted_labels
+    '''
     labels_num = [0 if element == 'pants-fire' else 1 if element == 'false' else 2 if element == 'barely-true' else 3 if element == 'half-true' else 4 if element == 'mostly-true' else 5 for element in labels_num]
     predicted_labels_num = [0 if element == 'pants-fire' else 1 if element == 'false' else 2 if element == 'barely-true' else 3 if element == 'half-true' else 4 if element == 'mostly-true' else 5 for element in predicted_labels_num]
     results = list(np.subtract(labels_num,predicted_labels_num))
@@ -127,7 +135,7 @@ def inference_soft_acc(labels, predicted_labels):
             except:
                 predicted_labels[i] = labels[i]
         else:
-            if type(predicted_labels[i]) != str:
+            if type(model_classes[0]) != str and type(model_classes[0]) != np.str_:
                 predicted_labels[i] = predicted_labels[i][0]
         i = i + 1
 
@@ -165,8 +173,6 @@ def binary_classifier(data, model_path, emphasis_binary_class = 'true', pred_thr
     return predicted_labels, binary_labels
 
 def two_stage_classifier(original_data, labels, model_paths, args, emphasis_binary_class, pred_threshold=0.5):
-    #emphasis_binary_class = args.binary_classes.split(',')
-    #pred_threshold = args.binary_prob_threshold
     data, labels = data_preprocessing(original_data, args)
     accuracy_calc = args.two_stage_acc_calc
     try:
@@ -180,7 +186,6 @@ def two_stage_classifier(original_data, labels, model_paths, args, emphasis_bina
     load_saved_model(model_paths['binary_classifier_path'], model_params, metric={'accuracy':None})
     predicted_labels = []
     if emphasis_binary_class[0]!='skip':
-    #Tunned probability thresholds for true class to avoid false positive classification
         if len(emphasis_binary_class) == 1:
             binary_labels = model_params[0].classes_
             emphasis_binary_class_index = np.where(np.array(binary_labels) == emphasis_binary_class)[0][0]
@@ -192,7 +197,7 @@ def two_stage_classifier(original_data, labels, model_paths, args, emphasis_bina
             #If model has numeric classes
             labels_encoded = 0
             model_classes = list(model_params[0].classes_) 
-            if type(model_classes[0]) != str:
+            if type(model_classes[0]) != str and type(model_classes[0]) != np.str_:
                 original_labels = labels.copy()
                 labels_encoded = 1
                 multiclass_data, new_labels, encoded_labels, label_encoder_obj = encode_labels(original_data, args)
@@ -214,7 +219,7 @@ def two_stage_classifier(original_data, labels, model_paths, args, emphasis_bina
             #If model has numeric classes
             model_classes = list(model_params[0].classes_) 
             labels_encoded = 0
-            if type(model_classes[0]) != str:
+            if type(model_classes[0]) != str and type(model_classes[0]) != np.str_:
                 original_labels = labels.copy()
                 labels_encoded = 1
                 multiclass_data, new_labels, encoded_labels, label_encoder_obj = encode_labels(original_data, args)
@@ -235,7 +240,7 @@ def two_stage_classifier(original_data, labels, model_paths, args, emphasis_bina
         labels_encoded = 0
         load_saved_model(model_paths['multi_classifier_path'], model_params, metric={'accuracy':None})
         model_classes = list(model_params[0].classes_) 
-        if type(model_classes[0]) != str:
+        if type(model_classes[0]) != str and type(model_classes[0]) != np.str_:
             original_labels = labels.copy()
             labels_encoded = 1
             data, new_labels, encoded_labels, label_encoder_obj = encode_labels(original_data, args)
@@ -245,7 +250,7 @@ def two_stage_classifier(original_data, labels, model_paths, args, emphasis_bina
     #predicted_labels = inference_soft_acc(labels, predicted_labels)
     if accuracy_calc:
         predicted_labels_int = predicted_labels.copy()
-        predicted_labels_int = inference_soft_acc(labels, predicted_labels_int)
+        predicted_labels_int = inference_soft_acc(labels, predicted_labels_int, model_classes)
         report = classification_report(labels, predicted_labels_int)
         print("Classification Report:\n", report)
         #Enable the lines below to display confusion matrix
@@ -269,8 +274,28 @@ def voting_heuristic(model1_labels, model2_labels, args):
     predicted_labels = model1_labels.copy()
     for i in range(0,len(model1_labels)):
         if not model1_labels[i] in model1_winning_classes:
-            predicted_labels[i] = model2_labels[i]
+            try:
+                predicted_labels[i] = model2_labels[i]
+            except:
+                predicted_labels[i] = model2_labels[i][0]
     return predicted_labels
+
+def update_classification_report(test_dataset, args, labels, predicted_labels,
+                                                  sub_categories_to_remove=['Imagery', 'Not Verifiable']):
+    test_file_path = os.path.join(os.path.dirname(args.test_file_path), 'datasets', os.path.basename(args.test_file_path).split('.')[0] + '.jsonl')
+    #model_label = '_' + args.model_label + '_'
+    #stats_file_path = os.path.join(os.path.dirname(args.test_file_path), 'stats', os.path.basename(args.test_file_path).split('.')[0] + model_label + 'stats.csv')
+    original_dataset = pd.read_json(test_file_path, lines=True)
+    claims = original_dataset.loc[original_dataset[args.stats_parameter].isin(sub_categories_to_remove)]['claim']
+    df = test_dataset.reset_index()
+    indexes = df.loc[df['claim'].isin(claims)].index
+    indexes = indexes//10
+    new_labels = labels.loc[set(labels.index) - set(indexes)]
+    new_predicted_labels = np.delete(predicted_labels, indexes, axis=0)       
+        
+    updated_report_str = classification_report(new_labels, new_predicted_labels)   
+        
+    return updated_report_str
 
 def plot_charts(results, output_file):
     """
@@ -330,49 +355,96 @@ def plot_charts(results, output_file):
     # Save all data to a single CSV file
     df = pd.DataFrame(all_data)
     df.to_csv(output_file, index=False)
-    return
+    return all_data
 
 def claim_analysis(test_dataset, args, classes, labels, predicted_labels):
     test_file_path = os.path.join(os.path.dirname(args.test_file_path), 'datasets', os.path.basename(args.test_file_path).split('.')[0] + '.jsonl')
-    stats_file_path = os.path.join(os.path.dirname(args.test_file_path), 'stats', os.path.basename(args.test_file_path).split('.')[0] + '_stats.csv')
+    model_label = '_' + args.model_label + '_'
+    stats_file_path = os.path.join(os.path.dirname(args.test_file_path), 'stats', os.path.basename(args.test_file_path).split('.')[0] + model_label + 'stats.csv')
     original_dataset = pd.read_json(test_file_path, lines=True)
     results = {}
     for cls in classes:
         # True Positives
         tp_indices = ((labels.values == cls) & (predicted_labels== cls)[:,0])
-
         indices = np.where(tp_indices == True)
         claims = test_dataset.iloc[indices]['claim']
         tp_categories = original_dataset.loc[original_dataset['claim'].isin(claims)][args.stats_parameter]
+        tp_indices_numb = indices[0]
         
         # False Positives
         fp_indices = ((labels.values != cls) & (predicted_labels == cls)[:,0])
         indices = np.where(fp_indices == True)
         claims = test_dataset.iloc[indices]['claim']
         fp_categories = original_dataset.loc[original_dataset['claim'].isin(claims)][args.stats_parameter]
+        fp_indices_numb = indices[0]
         
         # False Negatives
         fn_indices = ((labels.values == cls) & (predicted_labels != cls)[:,0])
         indices = np.where(fn_indices == True)
         claims = test_dataset.iloc[indices]['claim']
         fn_categories = original_dataset.loc[original_dataset['claim'].isin(claims)][args.stats_parameter]
+        fn_indices_numb = indices[0]
         
         # True Negatives
         tn_indices = ((labels.values != cls) & (predicted_labels != cls)[:,0])
         indices = np.where(tn_indices == True)
         claims = test_dataset.iloc[indices]['claim']
         tn_categories = original_dataset.loc[original_dataset['claim'].isin(claims)][args.stats_parameter]
+        tn_indices_numb = indices[0]
         
         # Store results
         results[cls] = {
             'True Positives': tp_categories,
             'False Positives': fp_categories,
             'False Negatives': fn_categories,
-            'True Negatives': tn_categories
+            'True Negatives': tn_categories,
+            'TP_indices': tp_indices_numb,
+            'FP_indices': fp_indices_numb,
+            'FN_indices': fn_indices_numb,
+            'TN_indices': tn_indices_numb,
         }
+    if args.plot_charts:
+        plot_charts(results, stats_file_path)
+    return results
 
-    plot_charts(results, stats_file_path)
-    return
+def parse_classification_report(report_str):
+    """
+    Parse the sklearn classification report string into a pandas DataFrame.
+
+    Parameters:
+        report_str (str): The classification report as a string.
+
+    Returns:
+        pd.DataFrame: Parsed classification report with metrics as columns.
+    """
+    lines = report_str.split('\n')
+    report_data = []
+    for line in lines[2:-3]:  # Skip the header and footer lines
+        row = re.split(r'\s{2,}', line.strip())  # Split on multiple spaces
+        if len(row) == 5:
+            report_data.append(row)
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(report_data, columns=['Class', 'Precision', 'Recall', 'F1-score', 'Support'])
+    df.set_index('Class', inplace=True)
+    df = df.astype({'Precision': float, 'Recall': float, 'F1-score': float, 'Support': float})
+    return df
+
+def generate_report_string(updated_report):
+    """
+    Generate a string classification report from a DataFrame.
+
+    Parameters:
+        updated_report (pd.DataFrame): Updated classification report.
+
+    Returns:
+        str: Classification report in string format.
+    """
+    report_str = f"{'Class':<15}{'Precision':<10}{'Recall':<10}{'F1-score':<10}{'Support':<10}\n"
+    report_str += "-" * 50 + "\n"
+    for cls, row in updated_report.iterrows():
+        report_str += f"{cls:<15}{row['Precision']:<10.2f}{row['Recall']:<10.2f}{row['F1-score']:<10.2f}{row['Support']:<10.0f}\n"
+    return report_str
 
 def inference(original_data, args, binary_class = 'true'):
     labels_encoded = 0
@@ -402,7 +474,7 @@ def inference(original_data, args, binary_class = 'true'):
                 load_saved_model(args.multi_classifier_path, model_params, metric={'accuracy':None})
                 model_classes = list(model_params[0].classes_) 
                 #If model has numeric classes
-                if type(model_classes[0]) != str:
+                if type(model_classes[0]) != str and type(model_classes[0]) != np.str_:
                     original_labels = labels.copy()
                     labels_encoded = 1
                     data, labels, encoded_labels, label_encoder_obj = encode_labels(original_data, args)
@@ -431,7 +503,7 @@ def inference(original_data, args, binary_class = 'true'):
         labels = original_labels.copy()
         predicted_labels = label_encoder_obj.inverse_transform(predicted_labels)
     if len(model_classes) > 3:
-        predicted_labels = inference_soft_acc(labels, predicted_labels)
+        predicted_labels = inference_soft_acc(labels, predicted_labels, model_classes)
         # Calculate accuracy
     accuracy = accuracy_score(labels, predicted_labels)
     print("Test Accuracy:", accuracy)
@@ -443,7 +515,11 @@ def inference(original_data, args, binary_class = 'true'):
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=model_classes)
     disp.plot()
     if args.generate_stats:
-        claim_analysis(args.processed_dataset, args, model_classes, labels, predicted_labels)
+        category_contributions = claim_analysis(args.processed_dataset, args, model_classes, labels, predicted_labels)
+    if args.remove_unverified:
+        updated_report = update_classification_report(original_data, args, labels, predicted_labels,
+                                                  sub_categories_to_remove=['Imagery', 'Not Verifiable'])
+        print("Unverified Removed - Classification Report:\n", updated_report)
     return
 
 def encode_labels(dataset, args):
@@ -504,7 +580,7 @@ def data_preprocessing(original_data, args):
         original_data.loc[original_data.label=='mostly-true', ['label']] = 'true'
     original_data = construct_features(original_data)
     #remove duplicate claims if there are any
-    original_data = original_data.drop_duplicates(subset=['claim'])
+    #original_data = original_data.drop_duplicates(subset=['claim'])
     if args.generate_stats:
         args.processed_dataset = original_data
     #DeleteMe#####
@@ -598,7 +674,10 @@ if __name__ == '__main__':
     parser.add_argument('--four_classes', type=int, default=0)
     parser.add_argument('--three_classes', type=int, default=0)
     parser.add_argument('--generate_stats', type=int, default=0)
+    parser.add_argument('--remove_unverified', type=int, default=0)
+    parser.add_argument('--plot_charts', type=int, default=0)
     parser.add_argument('--stats_parameter', type=str, default=None)
+    parser.add_argument('--model_label', type=str, default=None)
     parser.add_argument('--SMOTE_type', type=str, default='all', help="Supported options: minority, not minority, not majority, all")
     args = parser.parse_args()
     main(args)
