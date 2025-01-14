@@ -93,64 +93,25 @@ def construct_prompt(claim, prompt_params=None):
                     Claim: "one cannot import a Koran published in the Arabic language"
                     Claim: Religion
                     Claim: "Border agents discover body of 6-year-old girl: 'She was raped By 30 men'."
-                    Category: Subjective
+                    Category: Not Verifiable
                     Claim: "The inauguration of Donald Trump "will be the first one that I miss since I've been in Congress."
-                    Category: Subjective
+                    Category: Not Verifiable
                     Claim: "Colorado has offered free birth control for five years, leading to: a 40 percent drop in unintended pregnancy, a 42 percent drop in abortions, and millions of dollars in healthcare savings."
                     Category: Abortion
                     What category does the following claim belong to?
                     Claim:{}
                     If the claim doesn’t belong to any of the provided categories, it should be categorized as “Other”. If the claim doesn't have enough
-                    context to be verified, it should be categorized as "Subjective".
+                    context to be verified, it should be categorized as "Not Verifiable".
                     Your answer should be just the found category and no other text.'''.format(claim)
 
     return prompt
 
 func_prompts = [construct_prompt]
 
-def extract_claim_date(claim_context, time_offset):
-    res = re.findall(REGEX, claim_context)
-    if res:
-        month, day, year = res[0]
-        if int(day) < 10:
-            day = '0' + day
-        date_str = "{}-{}-{}".format(year, MONTH_MAPPING[month], day)
-        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
-        # add offset to the date so that we can experiment with different time constraints
-        new_date = date_obj + timedelta(days=time_offset)
-        # format the new date as "YYYY-MM-DD"
-        new_date_str = new_date.strftime("%Y-%m-%d")
-        return new_date_str
-    else:
-        return None
-
-# Generate sub-questions and apply filtering 
-def format_response(res):
-    for q in res.splitlines():
-        is_added = True
-        q = q.strip()
-        subcategory = q
-        if len(q) != 0:
-            # Check if it is a justification line
-            try:
-                q = q.split("Justification: ")[1]
-                is_justification = True
-            except:
-                is_justification = False
-                q = q.split("Question: ")[1]
-            # Remove quotation mark if there are any
-            q = re.sub('"', '', q)
-            # Remove question number if there are any
-            if q.lower().startswith(NUMBERS):
-                q = q[3:]
-                if q[0]==" ":
-                    q = q[1:]
-    return subcategory
-
 def count_matches(golden_categories, categorization):
     matches = 0
     golden_categories = golden_categories.values
-    subcategories = ['Politics', 'Politicians', 'Guns', 'Quotes', 'Immigration', 'Conspiracy Theories', 'Imagery', 'Ballot Box', 'Religion', 'Environment', 'Abortion']
+    subcategories = ['Politics', 'Politicians', 'Guns', 'Quotes', 'Immigration', 'Conspiracy Theories', 'Imagery', 'Ballot Box', 'Religion', 'Environment', 'Abortion', 'Not Verifiable']
     for golden_category, category in zip(golden_categories, categorization):
         if golden_category not in subcategories:
             golden_category = 'Other'
@@ -177,11 +138,13 @@ def main(args):
                 claim = df.iloc[i]['claim']
                 prompt_params={'numbed_of_questions':MAX_NUM_QUESTIONS}
                 response = promptLLM(llm, func_prompts, claim, start_time=start_time, prompt_params=prompt_params)
-                print(response.content)
-                subcategories.append(response.content)
+                category = response.content
+                print(category)
             except Exception as e:
                 print("error caught", e)
                 print('i=', i)
+                category = ('Not Verifiable')
+            subcategories.append(category)
         df['subcategory'] = subcategories
     if args.check_matches:
         accuracy = count_matches(df['subcategory'], subcategories)
