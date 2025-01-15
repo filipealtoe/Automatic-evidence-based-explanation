@@ -5,6 +5,9 @@ import os
 import time
 import pickle
 import json
+import glob
+from tqdm import tqdm
+import uuid
 from htmldate import find_date
 from web_search import extract_claim_date
 from datetime import datetime
@@ -27,8 +30,30 @@ from imblearn.over_sampling import SMOTE
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from catboost import CatBoostClassifier
-from scipy.stats import randint, uniform
+import models.raw_evidence_retriever as retriever
 
+MONTH_MAPPING = {"1": "January",
+                 "01": "January",
+                 "2": "February",
+                 "02": "February",
+                 "3": "March",
+                 "03": "March",
+                 "4": "April",
+                 "04": "April",
+                 "5": "May",
+                 "05": "May",
+                 "6": "June",
+                 "06": "June",
+                 "7": "July",
+                 "07": "July",
+                 "8": "August",
+                 "08": "August",
+                 "9": "September",
+                 "09": "September",
+                 "10": "October",
+                 "11": "November",
+                 "12": "December"
+                 }
 
 classifiers = {
         "knn": (KNeighborsClassifier(), {"n_neighbors": [3, 5, 7, 9 , 10, 50, 100]}),
@@ -99,196 +124,6 @@ def save_model(pickle_file, model_params=[], metric={}):
     pickle_file.close()
     return
 
-def load_saved_model(pickle_file, model_params=[], metric={}):
-    pickle_file = open(pickle_file,'rb')
-    for i in range(0,len(model_params)):
-        model_params[i] = pickle.load(pickle_file)
-
-    for metric in metric.keys():
-        metric = pickle.load(pickle_file)
-    pickle_file.close()
-
-def inference_soft_acc(labels, predicted_labels):
-    try:
-        labels_num = labels.copy()
-    except:
-        labels_num = labels
-    try:
-        predicted_labels_num = predicted_labels.copy()
-    except:
-        predicted_labels_num = predicted_labels
-    labels_num = [0 if element == 'pants-fire' else 1 if element == 'false' else 2 if element == 'barely-true' else 3 if element == 'half-true' else 4 if element == 'mostly-true' else 5 for element in labels_num]
-    predicted_labels_num = [0 if element == 'pants-fire' else 1 if element == 'false' else 2 if element == 'barely-true' else 3 if element == 'half-true' else 4 if element == 'mostly-true' else 5 for element in predicted_labels_num]
-    results = list(np.subtract(labels_num,predicted_labels_num))
-    i = 0
-    for result in results:
-        if abs(result) <= 1:
-            try:
-                predicted_labels[i] = labels.iloc[i]
-            except:
-                predicted_labels[i] = labels[i]
-        i = i + 1
-
-    return predicted_labels
-
-def feature_engineering(data, args):
-    if False:
-        from sklearn.cluster import KMeans
-        kmeans = KMeans(n_clusters=5, random_state=42)
-        cluster_labels = kmeans.fit_predict(data).reshape(-1, 1)
-        data['cluster_label'] = cluster_labels
-    
-    return data
-
-def two_stage_classifier(data, labels, model_paths):
-    best_classifier = None
-    grid_search = None
-    model_params = [best_classifier, grid_search]
-    #Run binary classification first
-    load_saved_model(model_paths['binary_classifier_path'], model_params, metric={'accuracy':None})
-    #binary_predictions = model_params[0].predict(data)
-    #Tunned probability thresholds for true class to avoid false positive classification
-    y_probs = model_params[0].predict_proba(data)
-    threshold = 0.695 
-    binary_predictions = (y_probs[:, 1] >= threshold).astype(int)
-    #Load multi-classifier model
-    load_saved_model(model_paths['multi_classifier_path'], model_params, metric={'accuracy':None})
-    predicted_labels = []
-    i = 0
-    for pred in binary_predictions:
-        if pred == 1: #If binary prediction got it right
-            predicted_labels.append(labels.iloc[i])#(binary_class)
-        else: #Run multi-class model
-            multi_class_pred = model_params[0].predict(data[i].reshape(1, -1))
-            #multi_class_pred = inference_soft_acc(multi_class_pred, [labels.iloc[i]])
-            predicted_labels.append(multi_class_pred[0])
-        i = i + 1
-    predicted_labels = inference_soft_acc(labels, predicted_labels)
-    return predicted_labels
-
-def voting_heuristic(model1_labels, model2_labels, model1_winning_classes = ['true'], model2_winning_classes = ['false', 'half-true']):
-    predicted_labels = model1_labels.copy()
-    for i in range(0,len(model1_labels)):
-        if model1_labels[i] in model2_winning_classes:
-            predicted_labels[i] = model2_labels[i]
-    return predicted_labels
-
-def inference(original_data, args, binary_class = 'true'):
-    binary_class = args.binary_classes.split(',')[0]
-    data, labels = data_preprocessing(original_data, args)
-    best_classifier = None
-    grid_search = None
-    model_params = [best_classifier, grid_search]    
-    if args.model_type == 'two_step_model' or args.model_type == 'voting_model':
-        model_classes = ['barely-true', 'false', 'half-true', 'mostly-true', 'true']
-        model_paths = {'binary_classifier_path':args.binary_classifier_path, 'multi_classifier_path':args.multi_classifier_path}
-        model1_predicted_labels = two_stage_classifier(data, labels, model_paths)
-        if args.model_type == 'voting_model':
-            model_paths = {'binary_classifier_path':args.second_binary_classifier_path, 'multi_classifier_path':args.multi_classifier_path}
-            model2_predicted_labels = two_stage_classifier(data, labels, model_paths)
-            predicted_labels = voting_heuristic(model1_predicted_labels, model2_predicted_labels)
-    else:
-        if args.model_type == 'multiclassifier_except_oneclass' or args.model_type == 'regular_multiclassifier':
-            model_file = args.multi_classifier_path
-        elif args.model_type == 'binary_classifier': 
-            model_file = args.binary_classifier_path
-        try:
-            load_saved_model(model_file, model_params, metric={'accuracy':None})
-        except Exception as e:
-            if (e.args[1] == 'No such file or directory'):
-                print(f"Model pickle file {model_file} not found.")
-            else:
-                print(f"Model type {args.model_type} unsupported. Check out help for model_type parameters for a list of supported models.")
-            return
-        model_classes = list(model_params[0].classes_)
-        predicted_labels = model_params[0].predict(data)
-        #Only applies soft accuracy if its is a truly multiclassification model
-        if len(model_classes) > 3:
-            predicted_labels = inference_soft_acc(labels, predicted_labels)
-        # Calculate accuracy
-    accuracy = accuracy_score(labels, predicted_labels)
-    print("Test Accuracy:", accuracy)
-    # Generate a detailed classification report
-    report = classification_report(labels, predicted_labels)
-    print("Classification Report:\n", report)
-    #Enable the lines below to display confusion matrix
-    cm = confusion_matrix(labels, predicted_labels)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=model_classes)
-    disp.plot()
-    return
-
-def training(original_data, args):
-    data_scaled, labels = data_preprocessing(original_data, args)
-    all_classifiers = list(classifiers.keys())
-    stored_cv_scores = 0
-    for trial_classifier in all_classifiers:
-        # Initialize the classifier
-        classifier_and_params = get_classifier_and_params(trial_classifier, classifiers)
-        if classifier_and_params is None:
-            raise ValueError(f"Classifier '{trial_classifier}' is not recognized.")    
-        classifier, param_grid = classifier_and_params
-
-        # Hyperparameter optimization
-        print(f"'Optimizing hyperparameters for : {trial_classifier}")
-        if param_grid:
-            grid_search = GridSearchCV(classifier, param_grid, cv=6, scoring='accuracy')
-            grid_search.fit(data_scaled, labels)
-            best_classifier = grid_search.best_estimator_
-        else:
-            best_classifier = classifier
-        cv_scores = cross_val_score(best_classifier, data_scaled, labels, cv=5, scoring='accuracy')
-        metric = cv_scores.mean()
-        if metric > stored_cv_scores:
-            chosen_classifier = {'classifier_model': trial_classifier, 'classifier': grid_search, 'scores':cv_scores}
-            stored_cv_scores = metric
-        print(f"Cross-Validation Accuracy Scores: {cv_scores}")
-        print(f"Accuracy: {stored_cv_scores:.2f}")
-
-    # Print results
-    print(f"Classifier: {chosen_classifier['classifier_model']}")
-    print(f"Classifier: {chosen_classifier['classifier'].best_params_}")
-    print(f"Cross-Validation Accuracy Scores: {chosen_classifier['scores']}")
-    print(f"Max Accuracy: {chosen_classifier['scores'].max():.2f}")
-    model_parameters = 'best_model_' + chosen_classifier['classifier_model'] + '_' + str(chosen_classifier['scores'].max()) + '_' + time.strftime("%Y%m%d-%H%M%S") + '.pkl'
-    model_output_file = os.path.join(args.data_dir,model_parameters)
-    save_model(model_output_file, model_params=[best_classifier, grid_search], metric={'accuracy':cv_scores.max()})
-
-def data_preprocessing(original_data, args):
-    binary_class = args.binary_classes.split(',')[0]
-    #Merging pant-fire and false
-    original_data.loc[original_data.label=='pants-fire', ['label']] = 'false'  
-    original_data = construct_features(original_data)
-    #Dropping trues
-    if args.model_type == 'multiclassifier_except_oneclass':
-        original_data = original_data.drop(original_data[original_data['label'] == binary_class].index)
-
-    data = original_data.drop(['claim', 'label'], axis=1)
-    data = feature_engineering(data, args)
-    labels = original_data['label']
-    data_scaled = data
-    data_scaled['label'] = labels
-    #Shuffle expanded dataset
-    if not args.inference:
-        indices = np.random.permutation(len(data_scaled))
-        data_scaled = data_scaled.iloc[indices]
-    labels = data_scaled['label']
-    data_scaled = data_scaled.drop(['label'], axis=1)    
-    scaler = StandardScaler()
-    data_scaled = scaler.fit_transform(data_scaled)
-    data_scaled = normalize(data_scaled) 
-   
-    if (args.model_type == 'binary_classifier'):
-        labels = prediction_labels_binary_classification(data, labels, args)
-
-    #SMOTE (Synthetic Minority Oversampling Technique) to generate additional synthetic samples for underrepresented classes in dataset. 
-    #This will help balance the dataset and potentially improve classifier accuracy
-    #Only oversample if is running training
-    if not args.inference:
-        smote = SMOTE(sampling_strategy='minority',random_state=42)
-        data_scaled, labels = smote.fit_resample(data_scaled, labels)
-
-    return data_scaled, labels
-
 def prediction_labels_binary_classification(data, labels, args):
     binary_classes = args.binary_classes.split(',')
     for i in range(0,len(data)):
@@ -318,43 +153,188 @@ def validate_returned_urls(df, args):
         file.write(json.dumps(problematic_urls, indent=4))
     return problematic_urls
 
+def merge_chunked_files(files_dir, consolidated_file_name, files_pattern='classification*.csv'):
+    #df=pd.DataFrame()
+    all_dfs = []
+    jsonl_file = 0
+    for file in glob.glob(f"{files_dir}/{files_pattern}"):
+        #if file.endswith(files_extension):
+        try:
+            aux = pd.read_json(os.path.join(files_dir, file), lines=True)
+            jsonl_file = 1
+        except:
+            aux=pd.read_csv(os.path.join(files_dir, file), encoding='utf-8', sep='\t', header=0)
+        all_dfs.append(aux)
+    df = pd.concat(all_dfs, axis=0)
+    if not jsonl_file:
+        df.to_csv(os.path.join(files_dir, consolidated_file_name), sep ='\t', header=True, index=False, encoding='utf-8')
+    else:
+        df.to_json(os.path.join(files_dir, consolidated_file_name), orient='records', lines=True)
+
+def get_topic(dataset):
+    for i, row in tqdm(dataset.iterrows()):
+        scrapped_text = retriever.scrape_website_text(row['url'])
+
+def format_claim_date(claim_date = ''):
+        month_day_year = claim_date.split('/')
+        try:
+            month_day_year[1]
+            date_str = "stated on {} {}, {}".format(MONTH_MAPPING[month_day_year[0]], month_day_year[1],  month_day_year[2])
+        except:
+            month_day_year = claim_date.split('-')
+            date_str = "stated on {} {}, {}".format(MONTH_MAPPING[month_day_year[1]], month_day_year[2],  month_day_year[0])
+        return date_str
+
+def convert_dataset(datasettype, datasetpath):
+    def format_finaldf(data_dict={}, data_values=[]):
+        final_df = pd.DataFrame()
+        for data_key,data_value in zip(data_dict.keys(),data_values):
+            final_df[data_key] = data_value
+        return final_df
+
+    
+    if datasettype == 'snopes':
+        df = pd.read_csv(datasetpath,delimiter=',', encoding="utf_8", on_bad_lines='skip', dtype=str)
+        df = df.dropna(subset=['article_date_phase1'])
+        labels = df['fact_rating_phase1']
+        claim_dates = df['article_date_phase1']
+        final_labels = []
+        example_ids = []
+        venues = []
+        persons = []
+        for label,claim_date in zip(labels, claim_dates):
+            example_ids.append(str(uuid.uuid4()))
+            if label == 'mostly false':
+                new_label = 'barely-true'
+            elif label == 'FALSE':
+                new_label = 'false'
+            elif label == 'mixture':
+                new_label = 'half-true'
+            elif label == 'mostly true':
+                new_label = 'mostly-true'
+            else:
+                new_label = 'true'
+            venues.append(format_claim_date(claim_date))
+            final_labels.append(new_label)
+            persons.append('')
+        
+        '''
+        final_df['example_id'] = example_ids
+        final_df['label'] = final_labels
+        final_df['url'] = df['snopes_url_phase1']
+        final_df['claim'] = df['article_claim_phase1']
+        final_df['category'] = df['article_category_phase1']
+        final_df['person'] = persons
+        final_df['venue'] = venues
+        '''
+        data_values = [example_ids, final_labels, df['snopes_url_phase1'], df['article_claim_phase1'], df['article_category_phase1'], persons, venues]
+        data_dict = {'example_id':None, 'label':None, 'url':None, 'claim':None, 'category':None, 'person':None, 'venue':None}
+
+    if datasettype == 'datacommons.org':
+        df = pd.read_json(datasetpath, lines=True)
+        df = df.dropna(subset=['datePublished'])
+        labels = []
+        claim_dates = df['datePublished']
+        urls = df['url']
+        claims = df['claimReviewed']
+        example_ids = []
+        venues = []
+        persons = []
+        categories = []
+        subcategories = []
+        fact_checkers = []
+        labels = []
+        for index,row in df.iterrows():
+            example_ids.append(str(uuid.uuid4()))
+            fact_checkers.append(row['author']['name'])
+            label = row['reviewRating']['alternateName'].lower()
+            if label == 'pants on fire':
+                new_label = 'pants-fire'
+            elif label == 'three pinocchios' or label == 'barely true':
+                new_label = 'barely-true'
+            elif label == 'four pinocchios':
+                new_label = 'false'
+            elif label == 'two pinocchios' or label == 'half true':
+                new_label = 'half-true'
+            elif label == 'one pinocchio' or label == 'mostly true' or label == 'not the whole story':
+                new_label = 'mostly-true'
+            elif label == 'geppetto checkmark':
+                new_label = 'true'
+            else: 
+                new_label = label
+            categories.append('Politics')
+            subcategories.append('None')
+            labels.append(new_label)
+            venues.append(format_claim_date(claim_dates[index]))
+            persons.append(row['itemReviewed']['author']['name'])
+        
+        data_values = [example_ids, labels, df['url'], df['claimReviewed'], categories, persons, venues, subcategories, fact_checkers]
+        data_dict = {'example_id':None, 'label':None, 'url':None, 'claim':None, 'category':None, 'person':None, 'venue':None, 'subcategory':None, 'fact_checker':None}
+
+    final_df = format_finaldf(data_dict, data_values)
+    return final_df
+
+def define_subcategory(original_dataset, new_dataset):
+    original_claims = new_dataset['claim']
+    subcategory = []
+    for claim_text in original_claims:
+        category = original_dataset[original_dataset['article_claim_phase1']==claim_text]['article_category_phase1']
+        if str(category.iloc[0]).find('Politicians') != -1:
+            subcategory.append('Politicians')
+            continue
+        try:
+            category = str(category.iloc[0]).split('Politics  ')[1]
+        except:
+            category = str(category.iloc[0]).split('  Politics')[0]
+        subcategory.append(category)
+    new_dataset['subcategory'] = subcategory
+    return new_dataset
+
 def main(args):
-    df = pd.read_json(args.train_sourcefile_path, lines=True)
+    data_path = args.train_sourcefile_path
+    merge_chunked_files(data_path,"poli_wp_snopes_mixed_test.csv", files_pattern="test*.csv")
+    #original_train = pd.read_json(args.train_sourcefile_path, lines=True)
+    #original_train = get_topic(original_train)
+    #small_train = pd.read_json(args.train_file_path, lines=True)
     #df1 = pd.read_json(args.train_file_path, lines=True)
-    test = validate_returned_urls(df, args)
-    small_train = pd.read_csv(args.train_file_path,delimiter='\t', encoding="utf_8", on_bad_lines='skip')
-    train_allYes = pd.read_csv(args.test_file_path,delimiter='\t', encoding="utf_8", on_bad_lines='skip')
+    #test = validate_returned_urls(df, args)
+    #wp = pd.read_json(args.train_file_path, lines=True)
+    #wp = pd.read_csv(args.train_file_path,delimiter=',', encoding="utf_8", on_bad_lines='skip', dtype=str)
+    #snopes_politics = define_subcategory(snopes_checked_v03, snopes_politics)
+    #snopes_politics.to_json(args.train_sourcefile_path, orient='records', lines=True)
+    #wp = small_test.loc[small_test['author.name']=='Washington Post']
+    small_test = pd.read_csv(args.test_file_path,delimiter='\t', encoding="utf_8", on_bad_lines='skip', dtype=str)
+    #small_test.shape
+    final_df = convert_dataset('datacommons.org', args.train_sourcefile_path)
+    final_df.to_json(args.output_path, orient='records', lines=True)
+    #final_df = pd.read_json(args.train_file_path, lines=True)
+    #politics = final_df[final_df['category'] == 'Politics']
+    #politics.to_json(args.output_path, orient='records', lines=True)
+    #wp = small_test.loc[small_test['author.name']=='Washington Post']
+    #wp = wp.loc[wp['datePublished']!=None]
+    #wp = wp.loc[wp['itemReviewed.@type']=='Claim']
+    #fc = small_test.loc[small_test['author.name']=='FactCheck.org']
+    #fc = fc.loc[fc['datePublished']!=None]
+    #c = fc.loc[fc['itemReviewed.@type']=='Claim']
+    #true_false = pd.read_csv(args.train_file_path,delimiter='\t', encoding="utf_8", on_bad_lines='skip', dtype=str)
+    #original_train = pd.read_csv(args.train_file_path,delimiter='\t', encoding="utf_8", on_bad_lines='skip', dtype=str)
 
-    original_claims = list(df['claim'])
-    small_train = list(small_train['claim'])
-    train_allYes = list(train_allYes['claim'])
+    #small_train_1_477_claims = list(small_train_1_477['claim'])
+    #small_train_claims = list(small_train['claim'])
+    #test_103claims = list(test_103claims['claim'])
 
-    unique_to_small_train_in_original_claims = np.setdiff1d(small_train,original_claims)
-    unique_to_train_allYes_in_small_train = np.setdiff1d(train_allYes,small_train)
-    unique_to_train_allYes_in_original_claims = np.setdiff1d(train_allYes,original_claims)
-    unique_to_small_train_in_train_allYes = np.setdiff1d(small_train,train_allYes)
+    #unique_to_test_103claims_in_small_test = np.setdiff1d(small_train_claims,small_train_1_477_claims)
+    #unique_to_train_allYes_in_small_train = np.setdiff1d(train_allYes,small_train)
+    #unique_to_train_allYes_in_original_claims = np.setdiff1d(train_allYes,original_claims)
+    #unique_to_original_claims_in_small_claims = np.setdiff1d(original_claims,small_claims)
 
-    if args.inference:
-        input_path = args.test_file_path
-    else:
-        input_path = args.train_file_path
-    args.data_dir = os.path.dirname(input_path)   
-    np.random.seed(42)
-    if(len(input_path.split('.csv'))>0):
-        original_data = pd.read_csv(input_path,delimiter='\t', encoding="utf_8", on_bad_lines='skip')
-    else:
-        original_data = pd.read_json(input_path, lines=True)      
-    
-    if not args.inference:
-         training(original_data, args)             
-    else:
-        inference(original_data, args)
-    
+   
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--train_sourcefile_path', type=str, default=None)
     parser.add_argument('--train_file_path', type=str, default=None)
+    parser.add_argument('--output_path', type=str, default=None)
     parser.add_argument('--test_file_path', type=str, default=None)
     parser.add_argument('--multi_classifier_path', type=str, default=None)
     parser.add_argument('--binary_classifier_path', type=str, default=None)
