@@ -30,16 +30,16 @@ import matplotlib.pyplot as plt
 
 CLASSIFIER = "logistic_regression"
 classifiers = {
-        #"knn": (KNeighborsClassifier(), {"n_neighbors": [3, 5, 7, 9 , 10, 50, 100]}),
-        #"naive_bayes": (GaussianNB(), {}),  # No hyperparameters to tune
-        #"decision_tree": (DecisionTreeClassifier(), {"max_depth": [1, 3, 5, 10, 50, 150]}),
-        #"svm": (SVC(), {"kernel": ["linear", "rbf", "poly"], "C": [0.1, 1, 5, 10, 100], "gamma":['scale', 'auto', 0.01, 0.1, 1]},),
-        #"logistic_regression": (LogisticRegression(max_iter=5000), {"C": [0.1, 1, 10, 100]}),
+        "knn": (KNeighborsClassifier(), {"n_neighbors": [3, 5, 7, 9 , 10, 50, 100]}),
+        "naive_bayes": (GaussianNB(), {}),  # No hyperparameters to tune
+        "decision_tree": (DecisionTreeClassifier(), {"max_depth": [1, 3, 5, 10, 50, 150]}),
+        "svm": (SVC(), {"kernel": ["linear", "rbf", "poly"], "C": [0.1, 1, 5, 10, 100], "gamma":['scale', 'auto', 0.01, 0.1, 1]},),
+        "logistic_regression": (LogisticRegression(max_iter=5000), {"C": [0.1, 1, 10, 100]}),
         #"one_versus_one": (OneVsOneClassifier(SVC(probability=True,random_state=42)), {"estimator__kernel": ["linear", "rbf", "poly"], "estimator__C": [0.1, 1, 5, 10, 100], "estimator__gamma":['scale', 'auto', 0.01, 0.1, 1]}),
         #"one_versus_rest": (OneVsRestClassifier(SVC(probability=True,random_state=42)), {"estimator__kernel": ["linear", "rbf", "poly"], "estimator__C": [0.1, 1, 5, 10, 100], "estimator__gamma":['scale', 'auto', 0.01, 0.1, 1]}),
         #"random_forest": (RandomForestClassifier(random_state=42), {"n_estimators": [1, 10, 50, 100, 200, 500, 1000, 2000, 2500, 2800], "max_depth": [1, 5, 10, 20, 50, 75]}),
         #"neural_network": (MLPClassifier(max_iter=5000, random_state=42), {"hidden_layer_sizes": [(20,), (75,), (100,), (125,), (150,)], "activation": ["relu"], "alpha": [0.000025, 0.000075,0.0001]})
-        "xgboost": (XGBClassifier(use_label_encoder=False, eval_metric='mlogloss', random_state=42, objective='multi:softprob'), {"n_estimators": [50, 100, 200], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.1, 0.2], 'subsample': [0.8, 1.0], 'colsample_bytree': [0.8, 1.0]}),
+        #"xgboost": (XGBClassifier(use_label_encoder=False, eval_metric='mlogloss', random_state=42, objective='multi:softprob'), {"n_estimators": [50, 100, 200], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.1, 0.2], 'subsample': [0.8, 1.0], 'colsample_bytree': [0.8, 1.0]}),
         #"lightgbm": (LGBMClassifier(random_state=42), {"n_estimators": [50, 100, 200], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.1, 0.2], 'num_leaves': [15, 31, 63],'subsample': [0.8, 1.0],'min_child_samples': [10, 20, 50],'min_data_in_leaf': [10, 20, 50]}),
         #"catboost": (CatBoostClassifier(verbose=0, random_state=42), {"iterations": [50, 100, 200], "depth": [3, 5, 7], "learning_rate": [0.01, 0.1, 0.2]}),
         #"neural_network": (MLPClassifier(max_iter=5000, random_state=42), {"hidden_layer_sizes": [(10,), (20,), (50,), (100,), (10, 10)], "activation": ["relu", "tanh"], "alpha": [0.00005, 0.0001, 0.001, 0.01]})
@@ -135,9 +135,12 @@ def inference_soft_acc(labels, predicted_labels, model_classes):
                 predicted_labels[i] = labels.iloc[i]
             except:
                 predicted_labels[i] = labels[i]
-        '''else:
-            if type(model_classes[0]) != str and type(model_classes[0]) != np.str_:
-                predicted_labels[i] = predicted_labels[i][0]'''
+        else:
+            try:
+                predicted_labels[i].shape
+                predicted_labels[i] = predicted_labels[i][0]
+            except:
+                pass
         i = i + 1
 
     return predicted_labels
@@ -185,7 +188,7 @@ def binary_classifier(data, model_path, emphasis_binary_class = 'true', pred_thr
     return predicted_labels, binary_labels
 
 def two_stage_classifier(original_data, labels, model_paths, args, emphasis_binary_class, pred_threshold=0.5):
-    data, labels = data_preprocessing(original_data, args)
+    data, labels, mod_df = data_preprocessing(original_data, args)
     accuracy_calc = args.two_stage_acc_calc
     try:
         emphasis_binary_class.remove('')
@@ -294,11 +297,11 @@ def voting_heuristic(model1_labels, model2_labels, args):
 
 def update_classification_report(test_dataset, args, labels, predicted_labels,
                                                   sub_categories_to_remove=['Imagery', 'Not Verifiable']):
-    test_file_path = os.path.join(os.path.dirname(args.test_file_path), 'datasets', os.path.basename(args.test_file_path).split('.')[0] + '.jsonl')
-    #model_label = '_' + args.model_label + '_'
-    #stats_file_path = os.path.join(os.path.dirname(args.test_file_path), 'stats', os.path.basename(args.test_file_path).split('.')[0] + model_label + 'stats.csv')
+    #test_file_path = os.path.join(os.path.dirname(args.test_file_path), 'datasets', os.path.basename(args.test_file_path).split('.')[0] + '.jsonl')
+    test_file_path = args.corpus_file_path 
     original_dataset = pd.read_json(test_file_path, lines=True)
     claims = original_dataset.loc[original_dataset[args.stats_parameter].isin(sub_categories_to_remove)]['claim']
+    data, labels, test_dataset = data_preprocessing(test_dataset, args)
     df = test_dataset.reset_index()
     indexes = df.loc[df['claim'].isin(claims)].index
     indexes = indexes//10
@@ -372,6 +375,12 @@ def plot_charts(results, output_file):
     df = pd.DataFrame(all_data)
     df.to_csv(output_file, index=False)
     return all_data
+
+def policy_only(dataset, args, subcategory='Politics'):
+    original_dataset = pd.read_json(args.corpus_file_path, lines=True) 
+    category_corpus_claims = original_dataset.loc[original_dataset['subcategory'] == subcategory]['claim']
+    dataset = dataset.loc[dataset['claim'].isin(category_corpus_claims)]
+    return dataset
 
 def claim_analysis(test_dataset, args, classes, labels, predicted_labels):
     test_file_path = os.path.join(os.path.dirname(args.test_file_path), 'datasets', os.path.basename(args.test_file_path).split('.')[0] + '.jsonl')
@@ -456,7 +465,7 @@ def claim_analysis(test_dataset, args, classes, labels, predicted_labels):
 def inference(original_data, args, binary_class = 'true'):
     labels_encoded = 0
     binary_class = args.binary_classes.split(',')[0]
-    data, labels = data_preprocessing(original_data, args)
+    data, labels, mod_df = data_preprocessing(original_data, args)
     best_classifier = None
     grid_search = None
     model_params = [best_classifier, grid_search]    
@@ -534,7 +543,7 @@ def encode_labels(dataset, args):
     label_encoder = LabelEncoder()
     y_encoded = label_encoder.fit_transform(numb_lab_original_data['label'])    
     numb_lab_original_data['label'] = y_encoded
-    data_scaled, labels = data_preprocessing(numb_lab_original_data, args)
+    data_scaled, labels, mod_df = data_preprocessing(numb_lab_original_data, args)
     return data_scaled, labels, y_encoded, label_encoder
 
 
@@ -586,6 +595,8 @@ def data_preprocessing(original_data, args):
         original_data.loc[original_data.label=='pants-fire', ['label']] = 'false'
         original_data.loc[original_data.label=='mostly-true', ['label']] = 'true'
     original_data = construct_features(original_data)
+    if args.policy_only:
+        original_data = policy_only(original_data, args, subcategory='Politics')
     #remove duplicate claims if there are any
     #original_data = original_data.drop_duplicates(subset=['claim'])
     if args.generate_stats:
@@ -621,10 +632,16 @@ def data_preprocessing(original_data, args):
     #Only oversample if is running training
     if not args.inference:
         #"minority", "not minority", "not majority", "all"
-        smote = SMOTE(sampling_strategy=args.SMOTE_type,random_state=42)
+        smallest_class_size = min(original_data['label'].value_counts().values)
+        #Protection for supper-small class sizes
+        if smallest_class_size < 7:
+            n_neighbors = int(smallest_class_size -1)
+        else:
+            n_neighbors = 6
+        smote = SMOTE(sampling_strategy=args.SMOTE_type, k_neighbors=n_neighbors, random_state=42)
         data_scaled, labels = smote.fit_resample(data_scaled, labels)
 
-    return data_scaled, labels
+    return data_scaled, labels, original_data
 
 def prediction_labels_binary_classification(data, labels, args):
     binary_classes = args.binary_classes.split(',')
@@ -663,6 +680,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--train_file_path', type=str, default=None)
     parser.add_argument('--test_file_path', type=str, default=None)
+    parser.add_argument('--corpus_file_path', type=str, default=None)
     parser.add_argument('--multi_classifier_path', type=str, default=None)
     parser.add_argument('--multi_classifier2_path', type=str, default=None)
     parser.add_argument('--binary_classifier_path', type=str, default=None)
@@ -681,6 +699,7 @@ if __name__ == '__main__':
     parser.add_argument('--four_classes', type=int, default=0)
     parser.add_argument('--three_classes', type=int, default=0)
     parser.add_argument('--generate_stats', type=int, default=0)
+    parser.add_argument('--policy_only', type=int, default=0)
     parser.add_argument('--categories_to_remove', type=str, default=None)
     parser.add_argument('--plot_charts', type=int, default=0)
     parser.add_argument('--stats_parameter', type=str, default=None)
