@@ -4,6 +4,7 @@ import re
 import openai
 import logging
 import time
+import numpy as np
 from collections import deque
 import json
 import pandas as pd
@@ -19,6 +20,7 @@ from uuid import uuid4
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
+from transformers import GPT2TokenizerFast
 
 
 
@@ -52,6 +54,10 @@ logging.basicConfig(
     handlers=[logging.FileHandler("file_management.log"), logging.StreamHandler()]
 )
 
+def count_tokens(text):
+    tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
+    tokens = tokenizer.encode(text)
+    return len(tokens)
 
 def semantic_similarity_search(scrapped_text, args, max_prompt_tokens = 4000, prompt_params=None, numb_similar_docs=20):
     temp_file_path  = args.input_path.split('.jsonl')[0] + '.txt'
@@ -71,6 +77,48 @@ def semantic_similarity_search(scrapped_text, args, max_prompt_tokens = 4000, pr
         response = response + doc.page_content
     os.remove(temp_file_path)
     return response
+
+def calculate_similarity(embedding1, embedding2):
+    dot_product = np.dot(embedding1, embedding2)
+    norm1 = np.linalg.norm(embedding1)
+    norm2 = np.linalg.norm(embedding2)
+    return dot_product / (norm1 * norm2)
+
+def faiss_similarity_index(scrapped_text, statement_to_compare, max_prompt_tokens=4000, token_limit=8191):
+
+    embeddings = OpenAIEmbeddings(model=EMBEDDINGS_MODEL)  
+    
+    # Split the scrapped text into chunks
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=int(max_prompt_tokens / 0.75), chunk_overlap=0)
+    scrapped_chunks = text_splitter.create_documents([scrapped_text])
+    
+    # Embed the chunks of scrapped_text
+    scrapped_embeddings = [embeddings.embed_query(doc.page_content) for doc in scrapped_chunks]
+    
+    # Check if statement_to_compare exceeds token limit
+    if count_tokens(statement_to_compare) > token_limit:
+        # Split statement_to_compare into chunks
+        statement_chunks = text_splitter.create_documents([statement_to_compare])
+    else:
+        # Treat the whole statement as a single chunk
+        statement_chunks = [statement_to_compare]
+    
+    # Embed each chunk of statement_to_compare and calculate similarities
+    similarity_scores = []
+    for statement_chunk in statement_chunks:
+        statement_embedding = embeddings.embed_query(statement_chunk.page_content if hasattr(statement_chunk, "page_content") else statement_chunk)
+        
+        # Calculate similarity with each scrapped chunk and take the maximum for this statement chunk
+        chunk_similarities = [
+            calculate_similarity(statement_embedding, scrapped_embedding)
+            for scrapped_embedding in scrapped_embeddings
+        ]
+        similarity_scores.append(max(chunk_similarities))
+    
+    # Compute the average similarity score across all statement chunks
+    similarity_index = sum(similarity_scores) / len(similarity_scores)
+    return similarity_index
+
 
 def Faiss_similarity_search(scrapped_text, statement_to_compare, args, max_prompt_tokens = 4000, prompt_params=None, numb_similar_docs=20):
     temp_file_path  = args.input_path.split('.jsonl')[0] + '.txt'
