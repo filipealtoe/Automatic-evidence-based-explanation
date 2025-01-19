@@ -163,6 +163,7 @@ def main(args):
         df_out['example_id'] = chunk_df['example_id']
         df_out['claim'] = chunk_df['claim']
         df_out['human_label'] = chunk_df['label']
+        #Enable this for newr version test datasets that include the LLM prompt
         df_out['LLM_decomposing_prompt'] = chunk_df['LLM_decomposing_prompt']
         df_out['generated_label'] = np.nan
         #Temperature = 0 as we want the summary to be factual and based on the input text

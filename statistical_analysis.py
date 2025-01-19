@@ -77,7 +77,7 @@ def main(args):
         df_original.loc[df_original[args.label_column]=='pants-fire', [args.label_column]] = 'false'
         df_original.loc[df_original[args.label_column]=='mostly-true', [args.label_column]] = 'true'
     columns_to_analyze = get_array_params(args.columns_to_analyze)
-    df_original = df_original[df_original['article_summary_similarity'].notna()]
+    #df_original = df_original[df_original['article_summary_similarity'].notna()]
     for column_to_analyze in columns_to_analyze:
         df = df_original.dropna(axis=0, subset=[column_to_analyze])
         #comparison_file_df = pd.read_json(args.comparison_file_path, lines=True)
