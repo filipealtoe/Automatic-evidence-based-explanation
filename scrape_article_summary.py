@@ -12,22 +12,31 @@ def scrape_article(url):
     shortontime = []
     webpage = requests.get(url)  #Make a request to the website
     soup = BeautifulSoup(webpage.text, "html.parser") #Parse the text from the website
-    article_text =  soup.find('article',attrs={'class':'m-textblock'})  #Get the tag and it's class
-    shortontime_text =  soup.find('div',attrs={'class':'short-on-time'})
+    try:
+        article_text =  soup.find('article',attrs={'class':'m-textblock'})  #Get the tag and it's class
+        shortontime_text =  soup.find('div',attrs={'class':'short-on-time'})
+    except:
+        return('','')
+    try:
+        if article_text!=None:
+            for line in article_text:
+                article.append(line.text)
+            article_ = ' '.join(article)
+        else:
+            article_ = ''
+    except:
+        article_ = ''
     
-    if article_text!=None:
-        for line in article_text:
-            article.append(line.text)
-    else:
-        article.append('')
-
-    if shortontime_text!=None:
-        for line in shortontime_text:
-            shortontime.append(line.text)
-    else:
-        shortontime.append(None)
-    article_ = ' '.join(article)
-    shortontime_ = ' '.join(shortontime).replace("\n", "")
+    try:
+        if shortontime_text!=None and args.get_summary:
+            for line in shortontime_text:
+                shortontime.append(line.text)
+            shortontime_ = ' '.join(shortontime).replace("\n", "")
+        else:
+            shortontime_ = ''
+    except:
+        shortontime_ = ''    
+    
     return article_, shortontime_
 
 
@@ -44,11 +53,12 @@ def main(args):
     article_text =[]
     summaries = []
     for i in tqdm(range(end)):
-        try:
-            article, summary = scrape_article(df.iloc[i]['url'])
-        except:
+        article, summary = scrape_article(df.iloc[i]['url'])
+        '''except Exception as e:
+            print(e)
             article = ''
             summary = ''
+            '''
         article_text.append(article)
         summaries.append(summary)
     output_df['human_article_text'] = article_text
@@ -62,5 +72,6 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_output_path', type=str, default=None)
     parser.add_argument('--start', type=int, default=None)
     parser.add_argument('--end', type=int, default=None)
+    parser.add_argument('--get_summary', type=int, default=None)
     args = parser.parse_args()
     main(args)
