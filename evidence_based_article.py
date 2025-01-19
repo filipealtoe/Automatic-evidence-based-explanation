@@ -1,18 +1,18 @@
 import argparse
 import os
-import re
+import glob
 import openai
 import logging
 import time
 from collections import deque
-import json
+from logging.handlers import RotatingFileHandler
 import pandas as pd
 from tqdm import tqdm
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
 from LLMsummarizer import promptLLM
 import numpy as np
-from LLMsummarizer import faiss_similarity_index, Faiss_similarity_search
+from LLMsummarizer import faiss_similarity_index,faiss_similarity_index_old, Faiss_similarity_search
 
 
 
@@ -44,6 +44,24 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[logging.FileHandler("file_management.log"), logging.StreamHandler()]
 )
+
+def merge_chunked_files(files_dir, consolidated_file_name, files_pattern):
+    #df=pd.DataFrame()
+    all_dfs = []
+    jsonl_file = 0
+    for file in glob.glob(f"{files_dir}/{files_pattern}"):
+        #if file.endswith(files_extension):
+        try:
+            aux = pd.read_json(os.path.join(files_dir, file), lines=True)
+            jsonl_file = 1
+        except:
+            aux=pd.read_csv(os.path.join(files_dir, file), encoding='utf-8', sep='\t', header=0)
+        all_dfs.append(aux)
+    df = pd.concat(all_dfs, axis=0)
+    if not jsonl_file:
+        df.to_csv(os.path.join(files_dir, consolidated_file_name), sep ='\t', header=True, index=False, encoding='utf-8')
+    else:
+        df.to_json(os.path.join(files_dir, consolidated_file_name), orient='records', lines=True)
 
 # Format example for static prompt
 def construct_mapreduce_prompt(prompt_params={}):
@@ -92,105 +110,150 @@ def summarize_article(article, decomposed_questions, claim, args):
         summary = None
     return summary
 
+def drop_missing_human_articles(dataset, corpus_dataset):
+    rows_to_drop = []
+    for i in range(0,len(dataset)):
+        human_article = corpus_dataset.loc[corpus_dataset['claim'] == dataset.iloc[i]['claim']]['human_article_text'].values[0]
+        if human_article == '':
+            rows_to_drop.append(i)
+    dataset = dataset.drop(rows_to_drop)
+    return dataset
+
 func_prompts = [construct_prompt, construct_mapreduce_prompt]
 
 def main(args):
     run_start_time = time.time()
     df = pd.read_json(args.input_path, lines=True)
     scraped_file_df = pd.read_json(args.scraped_file_path, lines=True)
+    #Only generate articles for the rows that there is a human counterpart article for comparison
+    df = drop_missing_human_articles(df, scraped_file_df)
     start = 0 if not args.start else args.start
+    end = args.end
     if not args.end:
         end = len(df)
     else:
         if args.end > len(df):
             end = len(df)
     df = df[start:end]
-    df_out = pd.DataFrame()
-    df_out['example_id'] = df['example_id']
-    df_out['claim'] = df['claim']
-    df_out['human_label'] = df['label']
-    df_out['LLM_decomposing_prompt'] = df['LLM_decomposing_prompt']
-    df_out['generated_label'] = np.nan
-    #Temperature = 0 as we want the summary to be factual and based on the input text
-    llm = ChatOpenAI(temperature = 0, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
-    explanations = []
-    evidence_based_articles = []
-    human_articles = []
-    human_summaries = []
-    article_similarities = []
-    article_summaries = []
-    article_summaries_similarities = []
-    
-    for i in tqdm(range(0, len(df))):
-        decomposed_search_hits = df.iloc[i]['decomposed_search_hits']
-        row_info = {}            
-        j = 0
-        for decomposed_search_hit in decomposed_search_hits:
-            explanation = {}
-            explanation['decomposed_question'] = decomposed_search_hit['decomposed_question']
-            explanation['decomposed_justification'] = decomposed_search_hit['decomposed_justification']            
-            explanation['decomposed_explanation'] = decomposed_search_hit['decomposed_justification_explanation']
-            justifications = []
-            start_time = time.time()
-            k = 0
-            evidences = []
-            for page_info in decomposed_search_hit['pages_info']:
-                if page_info['page_url'] == 'placeholder' or page_info['justification_summary']['output_text'] == 'placeholder':
-                    continue
-                evidences.append({'evidence_url':page_info['page_url'], 'evidence_summary':page_info['justification_summary']['output_text']})  
-            explanation['evidence'] = evidences
-            explanations.append(explanation)
-
-        #Evidence based article generation
-        explanation_ = ''
-        decomposed_questions_ = ''
-        for sub_explanation in explanations:
-            explanation_ = explanation_ + '/n' + sub_explanation['decomposed_explanation']
-            decomposed_questions_ = decomposed_questions_ + '/n' + sub_explanation['decomposed_question']       
-        prompt_params = {'claim':df.iloc[i]['claim'], 'label':df_out.iloc[i]['human_label']}
-        response = promptLLM(llm, func_prompts, explanation_, max_prompt_tokens=8000,
-                                start_time=time.time(), 
-                                prompt_params=prompt_params)   
-        try:
-            evidence_article = response.content         
-        except:
-            evidence_article = response['output_text']
-        evidence_based_articles.append(evidence_article)
-        scraped_text = scraped_file_df.loc[scraped_file_df['claim'] == df.iloc[i]['claim']]['human_article_text'].values[0]
-        human_articles.append(scraped_text)
-        #Articles similarity comparison of articles
-        try:
-            article_similarity = faiss_similarity_index(scraped_text, evidence_article, max_prompt_tokens=4000, token_limit=8191)
-        except:
-            article_similarity = -1
-        article_similarities.append(article_similarity)
-
-        #Summarization
-        human_summary = scraped_file_df.loc[scraped_file_df['claim'] == df.iloc[i]['claim']]['human_summary'].values[0]
-        human_summaries.append(human_summary)
-        try:
-            evidence_article_summary = summarize_article(evidence_article, decomposed_questions_, df_out.iloc[i]['claim'], args)
-        except:
-            evidence_article_summary = None
-        article_summaries.append(evidence_article_summary)
-        #Articles summaries similarity comparison of articles
-        if human_summary != None:
-            try:
-                article_summary_similarity = faiss_similarity_index(human_summary, evidence_article_summary, max_prompt_tokens=4000, token_limit=8191)
-            except:
-                article_summary_similarity = None
+    #Split dataset into chunk for intermediate file processing and saving
+    claims_chunk = args.claims_chunk
+    if df.shape[0]>=claims_chunk:
+        if divmod(len(df),claims_chunk)[1] == 0:
+            remainder = 0
         else:
-            article_summary_similarity = None
-        article_summaries_similarities.append(article_summary_similarity)
+            remainder = 1
+        chunks = len(df)//claims_chunk + remainder
+    else:
+        chunks = 1
+    data_path = args.final_output_path + '_' + time.strftime("%Y%m%d-%H%M%S")
+    if not os.path.exists(data_path):
+        os.makedirs(data_path)
+    run_start_time = time.time()
+    list_final_files_to_merge = []
+    for chunk_ind in tqdm(range(0,chunks)):
+        if chunk_ind != (chunks-1):
+            df_final_ind = chunk_ind*claims_chunk + claims_chunk
+        else:
+            df_final_ind = df.shape[0]
+        args.input_path = data_path + '/' + 'chunk' + str(chunk_ind) + '.jsonl'
+        chunk_df = df.iloc[chunk_ind*claims_chunk:df_final_ind]
+        chunk_df.to_json(args.input_path, orient='records', lines=True)
+        args.output_path = data_path + '/' + 'evidence' + str(chunk_ind) + '.jsonl'
+        df_out = pd.DataFrame()
+        df_out['example_id'] = chunk_df['example_id']
+        df_out['claim'] = chunk_df['claim']
+        df_out['human_label'] = chunk_df['label']
+        df_out['LLM_decomposing_prompt'] = chunk_df['LLM_decomposing_prompt']
+        df_out['generated_label'] = np.nan
+        #Temperature = 0 as we want the summary to be factual and based on the input text
+        llm = ChatOpenAI(temperature = 0, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)        
+        evidence_based_articles = []
+        human_articles = []
+        human_summaries = []
+        article_similarities = []
+        article_summaries = []
+        article_summaries_similarities = []
     
-    df_out['human_article'] = human_articles 
-    df_out['generated_artitle'] = evidence_based_articles   
-    df_out['artitle_simiarity'] = article_similarities 
-    df_out['human_summary'] = human_summaries
-    df_out['generated_article_summary'] = article_summaries   
-    df_out['artitle_summary_simiarity'] = article_summaries_similarities 
-    
-    df_out.to_json(args.output_path, orient='records', lines=True)
+        for i in tqdm(range(0, len(chunk_df))):
+            explanations = []
+            decomposed_search_hits = chunk_df.iloc[i]['decomposed_search_hits']           
+            for decomposed_search_hit in decomposed_search_hits:
+                explanation = {}
+                explanation['decomposed_question'] = decomposed_search_hit['decomposed_question']
+                explanation['decomposed_justification'] = decomposed_search_hit['decomposed_justification']            
+                explanation['decomposed_explanation'] = decomposed_search_hit['decomposed_justification_explanation']
+                justifications = []
+                start_time = time.time()
+                evidences = []
+                for page_info in decomposed_search_hit['pages_info']:
+                    if page_info['page_url'] == 'placeholder' or page_info['justification_summary']['output_text'] == 'placeholder':
+                        continue
+                    evidences.append({'evidence_url':page_info['page_url'], 'evidence_summary':page_info['justification_summary']['output_text']})  
+                explanation['evidence'] = evidences
+                explanations.append(explanation)
+
+            #Evidence based article generation
+            explanation_ = ''
+            decomposed_questions_ = ''
+            scraped_text = scraped_file_df.loc[scraped_file_df['claim'] == chunk_df.iloc[i]['claim']]['human_article_text'].values[0]
+            human_articles.append(scraped_text)
+            human_summary = scraped_file_df.loc[scraped_file_df['claim'] == chunk_df.iloc[i]['claim']]['human_summary'].values[0]
+            human_summaries.append(human_summary)
+
+            #Only generates evidence article if dataset includes a human generated article - for comparison purposes
+            if scraped_text != '':
+                for sub_explanation in explanations:
+                    explanation_ = explanation_ + '/n' + sub_explanation['decomposed_explanation']
+                    decomposed_questions_ = decomposed_questions_ + '/n' + sub_explanation['decomposed_question']       
+                prompt_params = {'claim':chunk_df.iloc[i]['claim'], 'label':df_out.iloc[i]['human_label']}
+                response = promptLLM(llm, func_prompts, explanation_, max_prompt_tokens=8000,
+                                        start_time=time.time(), 
+                                        prompt_params=prompt_params)   
+                try:
+                    evidence_article = response.content         
+                except:
+                    evidence_article = response['output_text']
+                evidence_based_articles.append(evidence_article)
+                #Articles similarity comparison of articles
+                try:
+                    article_similarity = faiss_similarity_index_old(scraped_text, evidence_article, max_prompt_tokens=4000, token_limit=8191)
+                except:
+                    article_similarity = None
+                article_similarities.append(article_similarity)
+
+                #Summarization only if human summary exists - for comparison purposes
+                if human_summary != '':
+                    try:
+                        evidence_article_summary = summarize_article(evidence_article, decomposed_questions_, df_out.iloc[i]['claim'], args)
+                    except:
+                        evidence_article_summary = ''
+                    #Articles summaries similarity comparison of articles
+                    try:
+                        article_summary_similarity = faiss_similarity_index(human_summary, evidence_article_summary, max_prompt_tokens=4000, token_limit=8191)
+                    except:
+                        article_summary_similarity = None
+                else:
+                    evidence_article_summary = ''
+                    article_summary_similarity = None
+                article_summaries.append(evidence_article_summary)
+                article_summaries_similarities.append(article_summary_similarity)
+            else:
+                evidence_based_articles.append("")
+                article_similarities.append(None)
+                article_summaries.append('')
+                article_summaries_similarities.append(None)
+        
+        df_out['human_article'] = human_articles 
+        df_out['generated_article'] = evidence_based_articles   
+        df_out['article_similarity'] = article_similarities 
+        df_out['human_summary'] = human_summaries
+        df_out['generated_article_summary'] = article_summaries   
+        df_out['article_summary_similarity'] = article_summaries_similarities 
+        
+        df_out.to_json(args.output_path, orient='records', lines=True)
+        print('Done generating Chunk{}'.format(chunk_ind))
+
+    merge_chunked_files(data_path, 'merged_article_generation.jsonl', files_pattern='evidence*.jsonl')
     print('Done generating!!!') 
     print('Total Time to complete the Run (sec): {}'.format(str(time.time() - run_start_time)))
 
@@ -198,8 +261,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_path', type=str, default=None)
     parser.add_argument('--output_path', type=str, default=None)
+    parser.add_argument('--final_output_path', type=str, default=None)
     parser.add_argument('--scraped_file_path', type=str, default=None)
     parser.add_argument('--start', type=int, default=None)
     parser.add_argument('--end', type=int, default=None)
+    parser.add_argument('--claims_chunk', type=int, default=20)
     args = parser.parse_args()
     main(args)

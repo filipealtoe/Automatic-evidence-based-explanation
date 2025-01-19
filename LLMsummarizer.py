@@ -119,6 +119,69 @@ def faiss_similarity_index(scrapped_text, statement_to_compare, max_prompt_token
     similarity_index = sum(similarity_scores) / len(similarity_scores)
     return similarity_index
 
+def faiss_similarity_index_old(
+    scrapped_text, 
+    statement_to_compare, 
+    max_prompt_tokens=4000, 
+    token_limit=8191  #match `text-embedding-3-small` limit
+):
+    from tiktoken import get_encoding
+
+    # Initialize tokenizer for token counting
+    tokenizer = get_encoding("cl100k_base")
+
+    def count_tokens(text):
+        """Count tokens in the given text using the tokenizer."""
+        return len(tokenizer.encode(text))
+
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")   
+    
+    # Split the scrapped text into manageable chunks within token limit
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=token_limit - 10,  # Slightly below token limit for safety
+        chunk_overlap=0
+    )
+    scrapped_chunks = text_splitter.create_documents([scrapped_text])
+
+    # Embed the chunks of scrapped_text
+    scrapped_embeddings = [
+        embeddings.embed_query(doc.page_content) for doc in scrapped_chunks
+    ]
+    
+    # Handle statement_to_compare token count
+    if count_tokens(statement_to_compare) > token_limit:
+        # Split statement_to_compare into chunks
+        statement_chunks = text_splitter.create_documents([statement_to_compare])
+    else:
+        # Treat the whole statement as a single chunk
+        statement_chunks = [statement_to_compare]
+
+    # Embed each chunk of statement_to_compare and calculate similarities
+    similarity_scores = []
+    for statement_chunk in statement_chunks:
+        # Extract content for embedding
+        chunk_content = (
+            statement_chunk.page_content
+            if hasattr(statement_chunk, "page_content")
+            else statement_chunk
+        )
+
+        # Check token count and truncate if necessary
+        if count_tokens(chunk_content) > token_limit:
+            chunk_content = tokenizer.decode(tokenizer.encode(chunk_content)[:token_limit])
+        
+        # Embed the chunk and compute similarities
+        statement_embedding = embeddings.embed_query(chunk_content)
+        chunk_similarities = [
+            calculate_similarity(statement_embedding, scrapped_embedding)
+            for scrapped_embedding in scrapped_embeddings
+        ]
+        similarity_scores.append(max(chunk_similarities))
+
+    # Compute the average similarity score across all statement chunks
+    similarity_index = sum(similarity_scores) / len(similarity_scores)
+    return similarity_index
+
 
 def Faiss_similarity_search(scrapped_text, statement_to_compare, args, max_prompt_tokens = 4000, prompt_params=None, numb_similar_docs=20):
     temp_file_path  = args.input_path.split('.jsonl')[0] + '.txt'
