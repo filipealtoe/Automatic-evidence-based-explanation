@@ -76,6 +76,10 @@ def main(args):
     if args.four_classes:
         df_original.loc[df_original[args.label_column]=='pants-fire', [args.label_column]] = 'false'
         df_original.loc[df_original[args.label_column]=='mostly-true', [args.label_column]] = 'true'
+    if args.policy_subcategory:
+        df_corpus = pd.read_json(args.corpus_file_path, lines=True)
+        policy_claims = df_corpus.loc[df_corpus['subcategory']=='Politics']['claim']
+        df_original = df_original.loc[df_original['claim'].isin(policy_claims)]
     columns_to_analyze = get_array_params(args.columns_to_analyze)
     #df_original = df_original[df_original['article_summary_similarity'].notna()]
     for column_to_analyze in columns_to_analyze:
@@ -110,7 +114,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_path', type=str, default=None)
     parser.add_argument('--output_path', type=str, default=None)
-    parser.add_argument('--comparison_file_path', type=str, default=None)
+    parser.add_argument('--corpus_file_path', type=str, default=None)
     parser.add_argument('--columns_to_analyze', type=str, default='similarity_index')
     parser.add_argument('--label_column', type=str, default='human_label')
     parser.add_argument('--start', type=int, default=None)
@@ -124,5 +128,6 @@ if __name__ == '__main__':
     parser.add_argument('--visualization', type=int, default=None)
     parser.add_argument('--four_classes', type=int, default=0)
     parser.add_argument('--five_classes', type=int, default=1)
+    parser.add_argument('--policy_subcategory', type=int, default=0)
     args = parser.parse_args()
     main(args)
