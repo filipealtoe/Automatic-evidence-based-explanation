@@ -6,6 +6,8 @@ import pandas as pd
 import time
 from tqdm import tqdm
 from langchain_openai import ChatOpenAI
+from langchain_community.llms import LlamaCpp
+from langchain_ollama import ChatOllama
 from LLMsummarizer import promptLLM
 
 # OpenAI API Key
@@ -181,8 +183,12 @@ def main(args):
     df["LLM_decomposing_prompt"] = ""
     start = 0 if not args.start else args.start
     end = len(df) if not args.end else args.end
-    llm = ChatOpenAI(temperature = 0.7, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
+    if args.model_provider == "openAI":
+        llm = ChatOpenAI(temperature = 0.7, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
+    elif args.model_provider == "Ollama":
+        llm = ChatOllama(base_url = "twdev.tplinkdns.com:11434", model = "llama3.2:3b", temperature = 0.7, num_predict = 1024)
     start_time = time.time()
+    run_start_time = time.time()
     for i in tqdm(range(start, end)):
         try:
             claim = df.iloc[i]['claim']
@@ -201,6 +207,7 @@ def main(args):
             print('i=', i)
 
     df.to_json(args.output_path, orient='records', lines=True)
+    print('Total Time to complete the Run (sec): {}'.format(str(time.time() - run_start_time)))
     print('Done!')
 
 
@@ -208,6 +215,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_path', type=str, default=None)
     parser.add_argument('--output_path', type=str, default=None)
+    parser.add_argument('--model_provide', type=str, default="openAI", help="supported model providers: openAI, Ollama")
     parser.add_argument('--start', type=int, default=None)
     parser.add_argument('--end', type=int, default=None)
     parser.add_argument('--time_offset', type=int, default=1, help="add an offest to the time at which the claim was made")

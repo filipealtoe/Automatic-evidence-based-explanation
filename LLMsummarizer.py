@@ -21,6 +21,7 @@ from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 from transformers import GPT2TokenizerFast
+from langchain_ollama import ChatOllama
 
 
 
@@ -225,7 +226,9 @@ def promptLLM(llm, prompt_funcs, scraped_text, start_time, max_prompt_tokens = 4
     docs = text_splitter.create_documents([scraped_text])
     num_tokens = llm.get_num_tokens(scraped_text)
     tokens_in_interval = sum(tokens for timestamp, tokens in usage_log)
-    if (tokens_in_interval  + num_tokens) > TOKEN_THRESHOLD:
+    
+    
+    '''if (tokens_in_interval  + num_tokens) > TOKEN_THRESHOLD:
         print(f"Token usage for next summarizatio: {num_tokens} tokens...")
         print(f"Token usage will exceed {TOKEN_THRESHOLD} tokens. Pausing for {DELAY_SECONDS} seconds...")
         time.sleep(DELAY_SECONDS)
@@ -264,7 +267,68 @@ def promptLLM(llm, prompt_funcs, scraped_text, start_time, max_prompt_tokens = 4
     print(f"Tokens used in summarization: {tokens_used}")
     print(f"Tokens in interval: {tokens_in_interval}")
 
-    return response
+    return response'''
+    if (tokens_in_interval + num_tokens) > TOKEN_THRESHOLD:
+        print(f"Token usage for next summarization: {num_tokens} tokens...")
+        print(f"Token usage will exceed {TOKEN_THRESHOLD} tokens. Pausing for {DELAY_SECONDS} seconds...")
+        time.sleep(DELAY_SECONDS)
+        start_time = time.time()
+
+    # If the text fits in a single prompt, use a simple prompt
+    if num_tokens <= max_prompt_tokens:
+        index = func_names.index('construct_prompt')
+        prompt = prompt_funcs[index](scraped_text, prompt_params)
+
+        # Invoke based on the type of LLM
+        #if hasattr(llm, "chat"):  # For ChatOllama
+        if isinstance(llm, ChatOllama):
+            response = llm.invoke(
+                input=prompt,
+                #model="llama3.2:3b",  # Specify the model
+                #temperature=0.7,
+                #max_tokens=max_prompt_tokens,
+            )
+            response_text = response
+        else:  # Assume OpenAI LLM
+            if hasattr(llm, "callback_manager") and llm.callback_manager is not None:
+                with llm.callback_manager as callback_handler:
+                    response_text = llm.invoke(prompt)
+            else:
+                response_text = llm.invoke(prompt)  # For models without a callback_manager
+
+    else:
+        # Use Map-Reduce prompt for larger text
+        index = func_names.index('construct_mapreduce_prompt')
+        prompt = prompt_funcs[index](prompt_params)
+        summary_chain = load_summarize_chain(
+            llm=llm,
+            chain_type='map_reduce',
+            map_prompt=prompt['map_prompt'],
+            combine_prompt=prompt['combine_prompt'],
+        )
+        if hasattr(llm, "callback_manager") and llm.callback_manager is not None:
+            with llm.callback_manager as callback_handler:
+                response_text = summary_chain.invoke(docs)
+        else:
+            response_text = summary_chain.invoke(docs)
+
+    llm_call_endtime = time.time()
+    
+    # Log token usage
+    tokens_used = num_tokens  # Adjust if a more accurate token count is needed
+    usage_log.append((start_time, tokens_used))
+    
+    # Remove outdated entries from the log
+    print(f"Time interval in seconds: {(llm_call_endtime - usage_log[0][0])}")
+    while usage_log and (time.time() - usage_log[0][0]) > INTERVAL_SECONDS:
+        usage_log.popleft()
+    
+    # Calculate token usage in the last INTERVAL_SECONDS
+    tokens_in_interval = sum(tokens for timestamp, tokens in usage_log)
+    print(f"Tokens used in summarization: {tokens_used}")
+    print(f"Tokens in interval: {tokens_in_interval}")
+
+    return response_text
 
 #The below is merely a playground for experiments as external scripts use this file as a module
 def main(args):
