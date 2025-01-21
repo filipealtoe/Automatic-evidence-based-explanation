@@ -523,6 +523,8 @@ def inference(original_data, args, binary_class = 'true'):
         # Calculate accuracy
     accuracy = accuracy_score(labels, predicted_labels)
     print("Test Accuracy:", accuracy)
+    #Save classifed dataset
+    save_classified_dataset(predicted_labels, mod_df, args)
     # Generate a detailed classification report
     report = classification_report(labels, predicted_labels)
     print("Classification Report:\n", report)
@@ -651,6 +653,16 @@ def prediction_labels_binary_classification(data, labels, args):
         
     return labels
 
+def save_classified_dataset(predicted_labels, classified_dataset, args):
+    file_path = os.path.join(args.output_file_dir, os.path.join(os.path.basename(args.test_file_path).split('.')[0] + '_classified.jsonl'))
+    corpus_dataset = pd.read_json(args.corpus_file_path, lines=True)
+    dataset_to_save = corpus_dataset.loc[corpus_dataset['claim'].isin(classified_dataset['claim'].values)]
+    dataset_to_save['predicted_label'] = ''
+    for i in range(0,classified_dataset.shape[0]):
+        dataset_to_save.loc[dataset_to_save['claim'] == classified_dataset.iloc[i]['claim'],'predicted_label'] = predicted_labels[i][0]
+    dataset_to_save.to_json(file_path, orient='records', lines=True)
+    return
+
 def main(args):
     used_three_classes = False
     if args.inference:
@@ -681,6 +693,7 @@ if __name__ == '__main__':
     parser.add_argument('--train_file_path', type=str, default=None)
     parser.add_argument('--test_file_path', type=str, default=None)
     parser.add_argument('--corpus_file_path', type=str, default=None)
+    parser.add_argument('--output_file_dir', type=str, default=None)
     parser.add_argument('--multi_classifier_path', type=str, default=None)
     parser.add_argument('--multi_classifier2_path', type=str, default=None)
     parser.add_argument('--binary_classifier_path', type=str, default=None)
