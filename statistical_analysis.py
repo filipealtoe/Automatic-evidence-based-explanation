@@ -3,6 +3,7 @@ import time
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+from collections import Counter
 from scipy.stats import ttest_1samp, f_oneway, kruskal, chi2_contingency
 
 def descriptive_stats(data, column_to_analyze):
@@ -68,6 +69,49 @@ def get_array_params(string_param = ''):
     parameters = string_param.split(',')
     return parameters
 
+def summary_rouge_1(data):
+    data = data.dropna(axis=0, subset=['generated_article_summary'])
+    references = data['human_summary']
+    generated_summaries = data['generated_article_summary']
+    if len(references) != len(generated_summaries):
+        raise ValueError("The number of references and generated summaries must be the same.")
+    
+    total_recall = 0.0
+    total_precision = 0.0
+    total_f1 = 0.0
+    n = len(references)
+    
+    for ref, gen in zip(references, generated_summaries):
+        # Tokenize and count unigrams
+        reference_tokens = ref.split()
+        generated_tokens = gen.split()
+        
+        reference_counts = Counter(reference_tokens)
+        generated_counts = Counter(generated_tokens)
+        
+        overlap = sum((reference_counts & generated_counts).values())
+        
+        # Calculate individual recall, precision, and F1-score
+        recall = overlap / len(reference_tokens) if reference_tokens else 0.0
+        precision = overlap / len(generated_tokens) if generated_tokens else 0.0
+        f1_score = (2 * recall * precision / (recall + precision)) if (recall + precision) > 0 else 0.0
+        
+        total_recall += recall
+        total_precision += precision
+        total_f1 += f1_score
+    
+        # Compute average scores
+        avg_recall = total_recall / n
+        avg_precision = total_precision / n
+        avg_f1_score = total_f1 / n
+        
+        return {
+            "Average ROUGE-1 Recall": avg_recall,
+            "Average ROUGE-1 Precision": avg_precision,
+            "Average ROUGE-1 F1-Score": avg_f1_score
+        }
+
+
 def main(args):
     run_start_time = time.time()
     df_original = pd.read_json(args.input_path, lines=True)
@@ -107,6 +151,8 @@ def main(args):
         #Box and Violin plots
         if args.visualization:
             visualize(args.label_column, column_to_analyze, df)
+        rouge_scores = summary_rouge_1(df)
+        print(rouge_scores)
     return
 
 
