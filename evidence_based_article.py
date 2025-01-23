@@ -90,7 +90,8 @@ def construct_mapreduce_prompt(prompt_params={}):
 
 def construct_prompt(doc_text, prompt_params=None):
     prompt = ''' You are a fact-check article writer. Rewrite the following text in the format of an article without a title. "{}"
-    Your answer should return only the article including a conclusion why the following claim is {}: {}
+    If the provided text is empty, your should be: "No text provided".
+    If not, your answer should return only the article including a conclusion why the following claim is {}: {}
     
 '''.format(doc_text, prompt_params['label'], prompt_params['claim'])
     return prompt
@@ -145,7 +146,7 @@ def main(args):
         chunks = len(df)//claims_chunk + remainder
     else:
         chunks = 1
-    data_path = args.final_output_path + '_' + time.strftime("%Y%m%d-%H%M%S")
+    data_path = args.output_dir + '_' + time.strftime("%Y%m%d-%H%M%S")
     if not os.path.exists(data_path):
         os.makedirs(data_path)
     run_start_time = time.time()
@@ -196,6 +197,7 @@ def main(args):
             #Evidence based article generation
             explanation_ = ''
             decomposed_questions_ = ''
+            decomposed_justifications_ = ''
             scraped_text = scraped_file_df.loc[scraped_file_df['claim'] == chunk_df.iloc[i]['claim']]['human_article_text'].values[0]
             human_articles.append(scraped_text)
             human_summary = scraped_file_df.loc[scraped_file_df['claim'] == chunk_df.iloc[i]['claim']]['human_summary'].values[0]
@@ -205,15 +207,23 @@ def main(args):
             if scraped_text != '':
                 for sub_explanation in explanations:
                     explanation_ = explanation_ + '/n' + sub_explanation['decomposed_explanation']
-                    decomposed_questions_ = decomposed_questions_ + '/n' + sub_explanation['decomposed_question']       
+                    decomposed_questions_ = decomposed_questions_ + '/n' + sub_explanation['decomposed_question']     
+                    decomposed_justifications_ = decomposed_justifications_ + '/n' + sub_explanation['decomposed_justification']   
                 prompt_params = {'claim':chunk_df.iloc[i]['claim'], 'label':df_out.iloc[i]['human_label']}
-                response = promptLLM(llm, func_prompts, explanation_, max_prompt_tokens=8000,
+                #Re-enable this for LLM article generation
+                '''response = promptLLM(llm, func_prompts, explanation_, max_prompt_tokens=8000,
                                         start_time=time.time(), 
                                         prompt_params=prompt_params)   
                 try:
                     evidence_article = response.content         
                 except:
-                    evidence_article = response['output_text']
+                    evidence_article = response['output_text']'''
+                if explanation_ == '':
+                    evidence_article = 'No evidence retrieved'
+                else:
+                    prompt_params = {'decomposed_justification':decomposed_questions_}
+                    evidence_article = Faiss_similarity_search(scrapped_text=explanation_, statement_to_compare=decomposed_justifications_, args=args, max_prompt_tokens = 1000/0.75, 
+                                                                prompt_params=prompt_params, numb_similar_docs=5)
                 evidence_based_articles.append(evidence_article)
                 #Articles similarity comparison of articles
                 try:
@@ -262,7 +272,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_path', type=str, default=None)
     parser.add_argument('--output_path', type=str, default=None)
-    parser.add_argument('--final_output_path', type=str, default=None)
+    parser.add_argument('--output_dir', type=str, default=None)
     parser.add_argument('--scraped_file_path', type=str, default=None)
     parser.add_argument('--start', type=int, default=None)
     parser.add_argument('--end', type=int, default=None)
