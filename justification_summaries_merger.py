@@ -11,6 +11,7 @@ from tqdm import tqdm
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
 from LLMsummarizer import promptLLM
+from LLMsummarizer import Faiss_similarity_search
 
 
 # OpenAI API Key
@@ -132,7 +133,12 @@ def main(args):
                 prompt_params = {'decomposed_justification':decomposed_search_hit['decomposed_justification'],
                                     'question': decomposed_search_hit['decomposed_question']}
                 try:
-                    response = promptLLM(llm, func_prompts, merged_justification, start_time=start_time, prompt_params=prompt_params)
+                    if args.FAISS:
+                        response = Faiss_similarity_search(scrapped_text=merged_justification, statement_to_compare=decomposed_search_hit['decomposed_question'], args=args, max_prompt_tokens = 1000/0.75, 
+                                                                prompt_params=prompt_params, numb_similar_docs=1)
+                        #response_LLM = promptLLM(llm, func_prompts, merged_justification, start_time=start_time, prompt_params=prompt_params)
+                    else:
+                        response = promptLLM(llm, func_prompts, merged_justification, start_time=start_time, prompt_params=prompt_params)
                     skip_response = 0
                 except Exception as e:
                     response_text = ""
@@ -146,10 +152,13 @@ def main(args):
                     print('Page url: ', page_info['page_url'])
                     skip_response = 1
                 if not skip_response:
-                    try:
-                        response_text = response.content
-                    except:
-                        response_text = response['output_text']
+                    if type(response) == str:
+                        response_text = response
+                    else:
+                        try:
+                            response_text = response.content
+                        except:
+                            response_text = response['output_text']                    
                     skip_response = 0  
                 #all_rows[justification_summary_line]['justification_summary'] = response_text
                 #all_rows[justification_summary_line]['summary_number_of_tokens'] = llm.get_num_tokens(row_info['page_justification_summary'])   
@@ -176,5 +185,6 @@ if __name__ == '__main__':
     parser.add_argument('--output_path', type=str, default=None)
     parser.add_argument('--start', type=int, default=None)
     parser.add_argument('--end', type=int, default=None)
+    parser.add_argument('--FAISS', type=int, default=None)
     args = parser.parse_args()
     main(args)
