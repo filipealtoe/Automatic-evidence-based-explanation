@@ -4,7 +4,7 @@ import pandas as pd
 import os
 import time
 import pickle
-import re
+import json
 from sklearn.model_selection import cross_val_score, GridSearchCV, RandomizedSearchCV
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KNeighborsClassifier
@@ -316,37 +316,38 @@ def update_classification_report(test_dataset, args, labels, predicted_labels,
     return updated_report_str
 
 def plot_charts(results, output_file):
-    """
-    Plots multiple pie charts for each category of each class showing the percentages of subcategories.
-    Saves the data for all classes into a single CSV file.
-    
-    Args:
-    - results (dict): A dictionary where keys are class labels and values are
-                      dictionaries with keys 'True Positives', 'False Positives',
-                      'False Negatives', and 'True Negatives'. Each category contains a list
-                      of subcategories.
-    - output_file (str): Path to the combined CSV file.
-    - missed_claims (array(str)): List with all claims with wrong predictions
-    """
-    # Initialize an empty list to store data for all classes
+
     all_data = []
-    
-    for cls, categories in results.items():
-        # Create a subplot for each category
-        fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+
+    for cls, categories_data in results.items():
+        # Create a subplot for the categories
+        fig, axes = plt.subplots(2, 2, figsize=(12, 12))
         fig.suptitle(f"Class {cls} - Distribution of Subcategories by Category", fontsize=16)
         
         # Flatten the axes for easier iteration
         axes = axes.flatten()
         
-        # Iterate over the categories
-        for i, (category, subcategories) in enumerate(categories.items()):
-            # Count the number of elements in each subcategory
-            subcategory_counts = {}
-            for subcategory in subcategories:
-                subcategory_counts[subcategory] = subcategory_counts.get(subcategory, 0) + 1
+        # Iterate over the list of category dictionaries
+        for i, category_data in enumerate(categories_data):
+            # Safeguard for more categories than available axes
+            if i >= len(axes):
+                print(f"Skipping category due to lack of axes: {category_data}")
+                continue
             
-            # Compute total and percentages
+            # Process each category
+           # for category, data in category_data.items():
+            category = list(category_data.keys())[0]
+            subcategories = category_data[category].values
+            claims = category_data[list(category_data.keys())[1]].values
+            
+            # Count the occurrences of each subcategory
+            subcategory_counts = {}
+            subcategory_claims = {}
+            for subcategory, claim in zip(subcategories, claims):
+                subcategory_counts[subcategory] = subcategory_counts.get(subcategory, 0) + 1
+                subcategory_claims.setdefault(subcategory, []).append(claim)
+            
+            # Calculate percentages
             total = sum(subcategory_counts.values())
             labels = list(subcategory_counts.keys())
             sizes = [(count / total) * 100 for count in subcategory_counts.values()]
@@ -358,10 +359,11 @@ def plot_charts(results, output_file):
                     "Category": category,
                     "Subcategory": label,
                     "Count": count,
-                    "Percentage": percentage
+                    "Percentage": percentage,
+                    "Claims": subcategory_claims[label]
                 })
             
-            # Plot pie chart
+            # Plot the pie chart
             ax = axes[i]
             ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
             ax.set_title(category)
@@ -371,10 +373,10 @@ def plot_charts(results, output_file):
         plt.tight_layout(rect=[0, 0, 1, 0.95])  # Leave space for the main title
         plt.show()
     
-    # Save all data to a single CSV file
-    df = pd.DataFrame(all_data)
-    df.to_csv(output_file, index=False)
-    return all_data
+    # Save all data to a single JSON file
+    df = pd.DataFrame(all_data, columns=list(all_data[0].keys()))
+    df.to_json(output_file, orient='records', lines=True)
+    return
 
 def policy_only(dataset, args, subcategory='Politics'):
     original_dataset = pd.read_json(args.corpus_file_path, lines=True) 
@@ -385,7 +387,7 @@ def policy_only(dataset, args, subcategory='Politics'):
 def claim_analysis(test_dataset, args, classes, labels, predicted_labels):
     test_file_path = os.path.join(os.path.dirname(args.test_file_path), 'datasets', os.path.basename(args.test_file_path).split('.')[0] + '.jsonl')
     model_label = '_' + args.model_label + '_'
-    stats_file_path = os.path.join(os.path.dirname(args.test_file_path), 'stats', os.path.basename(args.test_file_path).split('.')[0] + model_label + 'stats.csv')
+    stats_file_path = os.path.join(os.path.dirname(args.test_file_path), 'stats', os.path.basename(args.test_file_path).split('.')[0] + model_label + 'stats.jsonl')
     original_dataset = pd.read_json(test_file_path, lines=True)
     
     results = {}
@@ -398,65 +400,49 @@ def claim_analysis(test_dataset, args, classes, labels, predicted_labels):
         #tp_indices = ((labels.values == cls) & (predicted_labels== cls)[:,0])
         tp_indices = ((labels.values == cls) & (predicted_labels== cls))
         indices = np.where(tp_indices == True)
-        claims = test_dataset.iloc[indices]['claim']
-        tp_categories = original_dataset.loc[original_dataset['claim'].isin(claims)][args.stats_parameter]
-        tp_indices_numb = indices[0]
+        tp_claims = test_dataset.iloc[indices]['claim']
+        tp_categories = original_dataset.loc[original_dataset['claim'].isin(tp_claims)][args.stats_parameter]
         
         # False Positives
         #fp_indices = ((labels.values != cls) & (predicted_labels == cls)[:,0])
         fp_indices = ((labels.values != cls) & (predicted_labels == cls))
         indices = np.where(fp_indices == True)
-        claims = test_dataset.iloc[indices]['claim']
-        fp_categories = original_dataset.loc[original_dataset['claim'].isin(claims)][args.stats_parameter]
-        fp_indices_numb = indices[0]
+        fp_claims = test_dataset.iloc[indices]['claim']
+        fp_categories = original_dataset.loc[original_dataset['claim'].isin(fp_claims)][args.stats_parameter]
         
         # False Negatives
         #fn_indices = ((labels.values == cls) & (predicted_labels != cls)[:,0])
         fn_indices = ((labels.values == cls) & (predicted_labels != cls))
         indices = np.where(fn_indices == True)
-        claims = test_dataset.iloc[indices]['claim']
-        fn_categories = original_dataset.loc[original_dataset['claim'].isin(claims)][args.stats_parameter]
-        fn_indices_numb = indices[0]
+        fn_claims = test_dataset.iloc[indices]['claim']
+        fn_categories = original_dataset.loc[original_dataset['claim'].isin(fn_claims)][args.stats_parameter]
+
         
         # True Negatives
         #tn_indices = ((labels.values != cls) & (predicted_labels != cls)[:,0])
         tn_indices = ((labels.values != cls) & (predicted_labels != cls))
         indices = np.where(tn_indices == True)
-        claims = test_dataset.iloc[indices]['claim']
-        tn_categories = original_dataset.loc[original_dataset['claim'].isin(claims)][args.stats_parameter]
-        tn_indices_numb = indices[0]
-        
-        # Store results
-        '''
-        results[cls] = {
-            'True Positives': tp_categories,
-            'False Positives': fp_categories,
-            'False Negatives': fn_categories,
-            'True Negatives': tn_categories,
-            'TP_indices': tp_indices_numb,
-            'FP_indices': fp_indices_numb,
-            'FN_indices': fn_indices_numb,
-            'TN_indices': tn_indices_numb,
-        }'''
+        tn_claims = test_dataset.iloc[indices]['claim']
+        tn_categories = original_dataset.loc[original_dataset['claim'].isin(tn_claims)][args.stats_parameter]
 
-        results[cls] = {
-            'True Positives': tp_categories,
-            'False Positives': fp_categories,
-            'False Negatives': fn_categories,
-            'True Negatives': tn_categories,
-        }
+        results[cls] = [
+            {'True Positives': tp_categories, 'claims': tp_claims},
+            {'False Positives': fp_categories, 'claims': fp_claims},
+            {'False Negatives': fn_categories, 'claims': fn_claims},
+            {'True Negatives': tn_categories,'claims': tn_claims},
+        ]
     
     #Retrieve missed prediction claims
     #missed_index = np.where(labels.values != predicted_labels[:,0])
     missed_index = np.where(labels.values != predicted_labels)
     missed_claims = test_dataset.iloc[missed_index]['claim']
     missed_categories = original_dataset.loc[original_dataset['claim'].isin(missed_claims)][args.stats_parameter]
-    results['Missed Predictions'] = {
+    '''results['Missed Predictions'] = {
         'True Positives': ['None'],
         'False Positives': missed_categories,
         'False Negatives': ['None'],
         'True Negatives': ['None'],
-    }
+    }'''
     
     if args.plot_charts:
         plot_charts(results, stats_file_path)
