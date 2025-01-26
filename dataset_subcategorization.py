@@ -126,7 +126,7 @@ def main(args):
     #remove duplicate claims if there are any
     df = df.drop_duplicates(subset=['claim'])
     start = 0 if not args.start else args.start
-    end = len(df) if not args.end else args.end
+    end = len(df) if not args.end or args.number_of_claims > len(df) else args.end
     if args.include_first_category:
         df['category'] = ['Politics'] * end
     llm = ChatOpenAI(temperature = 0.7, model = ENGINE, api_key = api_key, max_tokens = 128, max_retries = MAX_GPT_CALLS)
@@ -151,7 +151,7 @@ def main(args):
         print('Accuracy: {}',accuracy)
     df.to_json(args.output_path, orient='records', lines=True)
     print('Done!')
-
+    return df
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

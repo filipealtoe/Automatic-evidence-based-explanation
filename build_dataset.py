@@ -3,7 +3,9 @@ import os
 import argparse
 import pandas as pd
 import uuid
-import scrapy
+from tqdm import tqdm
+import dataset_subcategorization
+import time
 
 api_key = os.getenv("GOOGLE_API_KEY")
 
@@ -74,12 +76,17 @@ def query_fact_checked_claims(api_key, query, numb_claims=10, site_filter=None,
 
 def format_claim_date(claim_date = ''):
         month_day_year = claim_date.split('T')[0].split('-')
-        date_str = "stated on {} {}, {}".format(MONTH_MAPPING[month_day_year[1]], month_day_year[2],  month_day_year[0])
+        if len(month_day_year) != 1:
+            date_str = "stated on {} {}, {}".format(MONTH_MAPPING[month_day_year[1]], month_day_year[2],  month_day_year[0])
+        else:
+            month_day_year = claim_date.split('/')
+            date_str = "stated on {} {}, {}".format(MONTH_MAPPING[month_day_year[0]], month_day_year[1],  month_day_year[2])
+        
         return date_str
 
-def convert_labels(df, datasettype = 'snopes'):
-    converted_df = pd.DataFrame()
-    if datasettype == 'snopes':
+def convert_labels(df, datasettype):    
+    if datasettype == 'snopes.com':
+        converted_df = pd.DataFrame()
         true_list = ['true', 'correct attribution']
         false_list = ['false']
         halftrue_list = ['half true', 'half-true', 'mixture']
@@ -102,32 +109,13 @@ def convert_labels(df, datasettype = 'snopes'):
                 append_row = 0
             if append_row:
                 converted_df = converted_df._append(df.iloc[row[0]])
-
+    else:
+        converted_df = df
     return converted_df
 
-def main():
-    '''
-    from factcheckexplorer.factcheckexplorer import FactCheckLib
-
-    # Initialize the library with your query and desired settings
-    fact_check = FactCheckLib(query="Politics", language="en", num_results=1000)
-
-    # Fetch the data
-    fact_check.process()
-    '''
-
+def get_data_from_website(query_subject="Politics"):
     df = pd.DataFrame() 
-    # Input parameters
-    query = "Politicians"
-    
-    # Query the API
-    '''
-    results = []
-    for offset in range(0, args.number_of_claims, 100):
-        results_paginated = query_fact_checked_claims(api_key, query, args.number_of_claims, args.fact_checker, max_age_days=args.max_age_days)
-        results.append(results_paginated)
-    '''
-    query = "Politics"
+    query = query_subject
     results = query_fact_checked_claims(api_key, query, args.number_of_claims, args.fact_checker, max_age_days=args.max_age_days)
     example_ids = []
     labels = []
@@ -181,16 +169,55 @@ def main():
             df['category'] = categories
             df['venue'] = venues
             df['fact_checker'] = fact_checkers
-            df1 = convert_labels(df)
-            df1.to_json(args.output_path, orient='records', lines=True)
+    return df    
+
+def get_data_from_dataset(dataset):
+    venues = []
+    example_ids = []
+    start = 0 if not args.start else args.start
+    end = len(dataset) if not args.number_of_claims or args.number_of_claims > len(dataset) else args.number_of_claims
+    for i in tqdm(range(start, end)):
+        claim_date = dataset.iloc[i]['date']    
+        example_ids.append(str(uuid.uuid4()))
+        venues.append(format_claim_date(claim_date))
+    dataset['example_id'] = example_ids
+    dataset['venue'] = venues
+    return dataset
+
+def main():
+    start_time = time.time()
+    if args.from_dataset:
+        try:
+            df = pd.read_csv(args.input_path,delimiter=',', encoding="utf_8", on_bad_lines='skip', dtype=str)
+        except:
+            df = pd.read_json(args.input_path, lines=True)
+        df = get_data_from_dataset(df)
     else:
-        print("Failed to retrieve data.")
+        try:
+            df = get_data_from_website(query_subject=args.query_subject)
+        except Exception as e:
+            print(e)
+            print("Failed to retrieve data.")
+    
+    df1 = convert_labels(df, args.fact_checker)
+    df1.to_json(args.output_path, orient='records', lines=True)
+    args.input_path = args.output_path
+    args.end = args.number_of_claims
+    dataset_subcategorization.main(args)
+        
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument('--input_path', type=str, default=None)
     parser.add_argument('--output_path', type=str, default=None)
     parser.add_argument('--fact_checker', type=str, default=None)
+    parser.add_argument('--query_subject', type=str, default=None)
+    parser.add_argument('--from_dataset', type=int, default=None)
+    parser.add_argument('--start', type=int, default=0)
     parser.add_argument('--number_of_claims', type=int, default=None)
-    parser.add_argument('--max_age_days', type=int, default=0)
+    parser.add_argument('--check_matches', type=int, default=0)
+    parser.add_argument('--include_first_category', type=int, default=0)
+    parser.add_argument('--include_subcategory', type=int, default=0)
     args = parser.parse_args()
     main()
+
