@@ -3,6 +3,7 @@ import time
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+import numpy as np
 from collections import Counter
 from scipy.stats import ttest_1samp, f_oneway, kruskal, chi2_contingency
 
@@ -35,11 +36,15 @@ def retrieve_artifacts(categories, stats_df_, classification_df, label = 'skip')
         classification_df_ = classification_df
         stats_df = stats_df_
     
-    claims = stats_df.loc[stats_df['Category'].isin(categories)]
+    claims = stats_df.loc[stats_df['category'].isin(categories)]
     #claims = clean_claims(claims, 'Claims')
     for i in range(0, claims.shape[0]):
         artifact = {}
-        decomposed_search_hits = classification_df_.loc[classification_df_['claim'].isin(claims.iloc[i]['Claims'])]['decomposed_search_hits'] 
+        all_claims = claims.iloc[i]['claims']
+        claims_to_include = []
+        for single_claim in all_claims:
+            claims_to_include.append(single_claim['claim'])
+        decomposed_search_hits = classification_df_.loc[classification_df_['claim'].isin(claims_to_include)]['decomposed_search_hits'] 
         all_decomposition = []
         for hits in decomposed_search_hits:
             all_hits = []
@@ -63,12 +68,17 @@ def retrieve_artifacts(categories, stats_df_, classification_df, label = 'skip')
     claims['artifacts'] = all_artifacts
     return claims
 
-def general_error_data(stats_df, classification_df):
+def general_error_data(args):
+    #Chunking to handle very large datasets
+    stats_df = read_large_json(args.stats_file_path)
+    classified_df = read_large_json(args.summary_merged_path)
+    #stats_df = pd.read_json(args.stats_file_path, lines=True)
+    #classified_df = pd.read_json(args.summary_merged_path, lines=True)
     missclassified_categories = ['False Negatives', 'False Positives']
     correctlyclassified_categories = ['True Negatives', 'True Positives']
-    miss_classified_claims = retrieve_artifacts(missclassified_categories, stats_df, classification_df)
-    correclty_classified_claims = retrieve_artifacts(correctlyclassified_categories, stats_df, classification_df)
-    return miss_classified_claims, correclty_classified_claims
+    retrieved_claims = retrieve_artifacts(missclassified_categories, stats_df, classified_df)
+    retrieved_claims = pd.concat([retrieved_claims,retrieve_artifacts(correctlyclassified_categories, stats_df, classified_df)], axis=0)
+    return retrieved_claims
 
 def specific_error_data(label, categories, stats_df, classification_df):
     classified_claims = retrieve_artifacts(categories, stats_df, classification_df, label)
@@ -85,20 +95,40 @@ def get_array_params(string_param = ''):
     parameters = string_param.split(',')
     return parameters
 
-def main(args):
-    run_start_time = time.time()
-    stats_df = pd.read_json(args.stats_file_path, lines=True)
-    classified_df = pd.read_json(args.summary_merged_path, lines=True)
+def read_large_json(dataset_path):
+    def read_json_in_chunks(file_path, chunksize=1000):
+        with open(file_path, 'r') as f:
+            chunks = []
+            for i, line in enumerate(f):
+                chunks.append(pd.read_json(line, lines=True))
+                if (i + 1) % chunksize == 0:
+                    yield pd.concat(chunks)
+                    chunks = []
+            if chunks:
+                yield pd.concat(chunks)
+    chunks = []
+    for chunk in read_json_in_chunks(dataset_path, chunksize=1000):
+        chunks.append(chunk)
+    merged = pd.concat(chunks, ignore_index=True)
+    return merged
 
+def main(args):
     if args.general_error:
-        missclassified_claims, correctly_classified_claims = general_error_data(stats_df, classified_df)
+        final_df = general_error_data(args)      
     
     if args.specific_error:
         categories = get_array_params(string_param = args.specific_categories)
+        all_categories = []
         for category in categories:
             specific_category_claims = specific_error_data(args.specific_error_class, [category], stats_df, classified_df)
+            all_categories.append(specific_category_claims)
+        final_df = pd.concat(all_categories, axis=0)    
 
-
+    #final_df.to_json(args.output_file_path, orient='records', lines=True)
+    #Chunking to handle very large datasets
+    with open(args.output_file_path, 'w') as f:
+        for chunk in np.array_split(final_df, 100):  # Split into 100 smaller chunks
+            chunk.to_json(f, orient='records', lines=True)
                
     return
 

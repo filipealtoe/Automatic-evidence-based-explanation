@@ -27,6 +27,7 @@ from lightgbm import LGBMClassifier
 from catboost import CatBoostClassifier
 from scipy.stats import randint, uniform
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 CLASSIFIER = "logistic_regression"
 classifiers = {
@@ -316,9 +317,9 @@ def update_classification_report(test_dataset, args, labels, predicted_labels,
     return updated_report_str
 
 def plot_charts(results, output_file):
-
     all_data = []
-
+    test_file_path = args.corpus_file_path 
+    original_dataset = pd.read_json(test_file_path, lines=True)
     for cls, categories_data in results.items():
         # Create a subplot for the categories
         fig, axes = plt.subplots(2, 2, figsize=(12, 12))
@@ -354,13 +355,21 @@ def plot_charts(results, output_file):
             
             # Append data to the combined list
             for label, count, percentage in zip(labels, subcategory_counts.values(), sizes):
+                test = subcategory_claims[label]
+                all_claim_dates = []
+                for claim_ in subcategory_claims[label]:
+                    claim_date = {}
+                    venue = original_dataset.loc[original_dataset['claim'] == claim_]['venue']
+                    date = venue.values[0].split('on ')[1].split(' in ')[0]
+                    claim_date = {'claim': claim_, 'date':date}
+                    all_claim_dates.append(claim_date)
                 all_data.append({
-                    "Class": cls,
-                    "Category": category,
-                    "Subcategory": label,
-                    "Count": count,
-                    "Percentage": percentage,
-                    "Claims": subcategory_claims[label]
+                    "class": cls,
+                    "category": category,
+                    "subcategory": label,
+                    "count": count,
+                    "percentage_occurrence": percentage,
+                    "claims": all_claim_dates
                 })
             
             # Plot the pie chart
@@ -377,6 +386,24 @@ def plot_charts(results, output_file):
     df = pd.DataFrame(all_data, columns=list(all_data[0].keys()))
     df.to_json(output_file, orient='records', lines=True)
     return
+
+def retrieve_claim_date_from_venue(dataset, comparison_date_str='2024-07-18'):
+    comparison_date = datetime.strptime(comparison_date_str, '%Y-%m-%d').timestamp()
+    venues = dataset['venue']
+    timestamps = []
+    for venue in venues:
+        try:
+            parts = venue.split('on ')[1].split(' in ')[0]  # Extracts 'November 16, 2020'
+            # Parse the date into a datetime object
+            date_obj = datetime.strptime(parts, '%B %d, %Y')
+            # Convert to a timestamp and append to the result list
+            timestamps.append(date_obj.timestamp())
+        except (IndexError, ValueError) as e:
+            # Handle errors gracefully if the format is incorrect
+            print(f"Could not parse date in string: {venue} ({e})")
+            timestamps.append(None)  # Append None if parsing fails
+    indices = [i for i, ts in enumerate(timestamps) if ts is not None and ts > comparison_date]
+    return indices
 
 def policy_only(dataset, args, subcategory='Politics'):
     original_dataset = pd.read_json(args.corpus_file_path, lines=True) 
