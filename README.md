@@ -171,3 +171,6 @@ All parameter belows are "0" or "1" to enable/disable their corresponding analys
 The parametes below are "0" or "1" depending on the number of labels
     "--five_classes",
     "--four_classes"
+
+## Error Analysis and User Study Data Analysis:
+A separate python notebook has been created to each one of the referred tasks. They are stored in corresponding directories of same name.
