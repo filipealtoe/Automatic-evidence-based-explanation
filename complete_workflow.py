@@ -5,7 +5,7 @@ from collections import deque
 import glob
 import pathlib
 import time
-import claim_decomposer, web_search, justification_summarizer_approach1, justification_summarizer_approach2
+import claim_decomposer, web_search, justification_summarizer_approach2
 import justification_summaries_merger, justifications_classifier, evidence_based_article, tavily_search
 import pandas as pd
 from tqdm import tqdm
