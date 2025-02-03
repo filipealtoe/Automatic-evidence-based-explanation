@@ -211,19 +211,19 @@ def main(args):
                     decomposed_justifications_ = decomposed_justifications_ + '/n' + sub_explanation['decomposed_justification']   
                 prompt_params = {'claim':chunk_df.iloc[i]['claim'], 'label':df_out.iloc[i]['human_label']}
                 #Re-enable this for LLM article generation
-                '''response = promptLLM(llm, func_prompts, explanation_, max_prompt_tokens=8000,
+                response = promptLLM(llm, func_prompts, explanation_, max_prompt_tokens=8000,
                                         start_time=time.time(), 
                                         prompt_params=prompt_params)   
                 try:
                     evidence_article = response.content         
                 except:
-                    evidence_article = response['output_text']'''
-                if explanation_ == '':
+                    evidence_article = response['output_text']
+                '''if explanation_ == '':
                     evidence_article = 'No evidence retrieved'
                 else:
                     prompt_params = {'decomposed_justification':decomposed_questions_}
                     evidence_article = Faiss_similarity_search(scrapped_text=explanation_, statement_to_compare=decomposed_justifications_, args=args, max_prompt_tokens = 1000/0.75, 
-                                                                prompt_params=prompt_params, numb_similar_docs=5)
+                                                                prompt_params=prompt_params, numb_similar_docs=5)'''
                 evidence_based_articles.append(evidence_article)
                 #Articles similarity comparison of articles
                 try:
