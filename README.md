@@ -58,11 +58,37 @@ To decompopse the claim into a set of sub-questions, you can run module claim_de
 --input_path: "string with absolute path to the corpus json dataset"
 --output_path: "string with absolute path to the json to store the decomposed dataset"
 
+The following LLM prompt was used:
+    "You are a fact-checker. A claim is true when the statement is accurate. A claim is false when the statement is not accurate.
+    Take the following claim: '''''claim''''' 
+    Assume you will do a web search to verify the claim. What would be the '''''5''''' most important yes or no types of questions to feed a web browser to verify the claim is true and the 
+    '''''5''''' most important yes or no types of questions to feed a web browser to verify the claim is false?
+    The two sets of 5 questions must explore different aspects of the claim. 
+    Return a single list of questions in the following format without any other text: 
+    Question: 
+    Justification:
+    The top five to verify the claim is true and the bottom five to verify the claim is false.
+
 ## Evidence Search:
 To perform evidence search with the bing API run web_search.py with the following parameters:
 --input_path: "string with absolute path to the decomposed json dataset"
 --output_path: "string with absolute path to the json to store the web results dataset"
 --answer_count: "integer with the target number of urls to return per decomposed question"
+
+The following list was passed to the module as blocked domains:
+    "politifact.com",
+    "factcheck.org",
+    "snopes.com",
+    "washingtonpost.com/news/fact-checker/",
+    "apnews.com/hub/ap-fact-check",
+    "fullfact.org/",
+    "reuters.com/fact-check",
+    "youtube.com",
+    ".pdf",
+    "fact-check",
+    "factcheck",
+    "wikipedia.org",
+    "facebook.com"
 
 ## Evidence Summarizer:
 To perform evidence summarization run justification_summarizer_approach2.py with the following parameters:
@@ -75,11 +101,24 @@ To merge the evidence summaries run justification_summaries_merge.py with the fo
 --output_path: "string with absolute path to the json to store the summary merged dataset"
 --FAISS: "1: uses GPT model as in the paper, 0:uses FAISS summarization"
 
+The following LLM prompt was used:
+    "Document: '''''All retrieved evidence content'''''
+
+    Summarize the document in a single paragraph. Only include information that is present in the document in a factual manner.
+    Your response should not make any reference to "the text" or "the document" and be ready to be merged into a fact-check article."
+
 ## Questions Verdicts:
 To generate decomposed question verdicts run justifications_classifier.py with the following parameters:
 --input_path: "string with absolute path to the summary merge json dataset"
 --output_path: "string with absolute path to the json to store the decomposed claim verdict dataset"
 --FAISS: "1: uses GPT model as in the paper, 0:uses FAISS summarization"
+
+The following LLM prompt was used:
+    "Given the following context: '''''The generated decomposed question explanation'''''.
+
+    Use only the context provided to answer the following question as Yes, No or Unverified.  
+    Question: '''''Decomposed question'''''
+    Your response should be a single word
 
 ## Complete Workflow:
 To generate a sample dataset and a CSV test dataset ready for classification run complete_workflow.py. This script automates the modules described above:
@@ -134,6 +173,11 @@ To generate the full verdict explanation article and the corresponding summary r
 --claims_chunk: "integer number that breaks a large dataset into the entered number of rows to perform intermediate file saving"
 --output_dir: "directory to store the output dataset"
 --scraped_file_path: "string with absolute path to the json dataset including the human-generated article and summary. See scrape_article_summary.py for details"
+
+The following LLM prompt was used:
+    "You are a fact-check article writer. Rewrite the following text in the format of an article without a title. '''''The combined decomposed questions explanations'''''
+    If the provided text is empty, your should be: "No text provided".
+    If not, your answer should return only the article including a conclusion why the following claim is '''''Generated claim verdict''''': '''''Claim'''''
 
 ## Other Supporting Script:
 The following scripts were used during research and are listed as supporting material to the EFFORT pipeline
