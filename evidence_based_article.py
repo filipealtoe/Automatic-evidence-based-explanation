@@ -125,9 +125,10 @@ func_prompts = [construct_prompt, construct_mapreduce_prompt]
 def main(args):
     run_start_time = time.time()
     df = pd.read_json(args.input_path, lines=True)
-    scraped_file_df = pd.read_json(args.scraped_file_path, lines=True)
-    #Only generate articles for the rows that there is a human counterpart article for comparison
-    df = drop_missing_human_articles(df, scraped_file_df)
+    if args.compare_with_human_articles:
+        scraped_file_df = pd.read_json(args.scraped_file_path, lines=True)
+        #Only generate articles for the rows that there is a human counterpart article for comparison
+        df = drop_missing_human_articles(df, scraped_file_df)
     start = 0 if not args.start else args.start
     end = args.end
     if not args.end:
@@ -195,16 +196,19 @@ def main(args):
                 explanations.append(explanation)
 
             #Evidence based article generation
+            scraped_text = ''
+            human_summary = ''
             explanation_ = ''
             decomposed_questions_ = ''
             decomposed_justifications_ = ''
-            scraped_text = scraped_file_df.loc[scraped_file_df['claim'] == chunk_df.iloc[i]['claim']]['human_article_text'].values[0]
-            human_articles.append(scraped_text)
-            human_summary = scraped_file_df.loc[scraped_file_df['claim'] == chunk_df.iloc[i]['claim']]['human_summary'].values[0]
-            human_summaries.append(human_summary)
+            if args.compare_with_human_articles:
+                scraped_text = scraped_file_df.loc[scraped_file_df['claim'] == chunk_df.iloc[i]['claim']]['human_article_text'].values[0]
+                human_articles.append(scraped_text)
+                human_summary = scraped_file_df.loc[scraped_file_df['claim'] == chunk_df.iloc[i]['claim']]['human_summary'].values[0]
+                human_summaries.append(human_summary)
 
             #Only generates evidence article if dataset includes a human generated article - for comparison purposes
-            if scraped_text != '':
+            if scraped_text != '' or args.compare_with_human_articles==0:
                 for sub_explanation in explanations:
                     explanation_ = explanation_ + '/n' + sub_explanation['decomposed_explanation']
                     decomposed_questions_ = decomposed_questions_ + '/n' + sub_explanation['decomposed_question']     
@@ -225,41 +229,47 @@ def main(args):
                     evidence_article = Faiss_similarity_search(scrapped_text=explanation_, statement_to_compare=decomposed_justifications_, args=args, max_prompt_tokens = 1000/0.75, 
                                                                 prompt_params=prompt_params, numb_similar_docs=5)'''
                 evidence_based_articles.append(evidence_article)
+
+                if args.compare_with_human_articles:
                 #Articles similarity comparison of articles
-                try:
-                    article_similarity = faiss_similarity_index_old(scraped_text, evidence_article, max_prompt_tokens=4000, token_limit=8191)
-                except:
-                    article_similarity = None
-                article_similarities.append(article_similarity)
+                    try:
+                        article_similarity = faiss_similarity_index_old(scraped_text, evidence_article, max_prompt_tokens=4000, token_limit=8191)
+                    except:
+                        article_similarity = None
+                    article_similarities.append(article_similarity)
 
                 #Summarization only if human summary exists - for comparison purposes
-                if human_summary != '':
+                if human_summary != '' or args.compare_with_human_articles==0:
                     try:
                         evidence_article_summary = summarize_article(evidence_article, decomposed_questions_, df_out.iloc[i]['claim'], args)
                     except:
                         evidence_article_summary = ''
+                    
+                    if args.compare_with_human_articles:
                     #Articles summaries similarity comparison of articles
-                    try:
-                        article_summary_similarity = faiss_similarity_index(human_summary, evidence_article_summary, max_prompt_tokens=4000, token_limit=8191)
-                    except:
-                        article_summary_similarity = None
+                        try:
+                            article_summary_similarity = faiss_similarity_index(human_summary, evidence_article_summary, max_prompt_tokens=4000, token_limit=8191)
+                        except:
+                            article_summary_similarity = None
                 else:
                     evidence_article_summary = ''
                     article_summary_similarity = None
                 article_summaries.append(evidence_article_summary)
-                article_summaries_similarities.append(article_summary_similarity)
+                if args.compare_with_human_articles:
+                    article_summaries_similarities.append(article_summary_similarity)
             else:
                 evidence_based_articles.append("")
                 article_similarities.append(None)
                 article_summaries.append('')
                 article_summaries_similarities.append(None)
         
-        df_out['human_article'] = human_articles 
-        df_out['generated_article'] = evidence_based_articles   
-        df_out['article_similarity'] = article_similarities 
-        df_out['human_summary'] = human_summaries
-        df_out['generated_article_summary'] = article_summaries   
-        df_out['article_summary_similarity'] = article_summaries_similarities 
+        df_out['generated_article'] = evidence_based_articles
+        df_out['generated_article_summary'] = article_summaries
+        if args.compare_with_human_articles:
+            df_out['human_article'] = human_articles                
+            df_out['article_similarity'] = article_similarities 
+            df_out['human_summary'] = human_summaries   
+            df_out['article_summary_similarity'] = article_summaries_similarities 
         
         df_out.to_json(args.output_path, orient='records', lines=True)
         print('Done generating Chunk{}'.format(chunk_ind))
@@ -276,6 +286,7 @@ if __name__ == '__main__':
     parser.add_argument('--scraped_file_path', type=str, default=None)
     parser.add_argument('--start', type=int, default=None)
     parser.add_argument('--end', type=int, default=None)
+    parser.add_argument('--compare_with_human_articles', type=int, default=None)
     parser.add_argument('--claims_chunk', type=int, default=20)
     args = parser.parse_args()
     main(args)
