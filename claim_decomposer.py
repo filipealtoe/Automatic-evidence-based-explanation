@@ -12,6 +12,7 @@ from LLMsummarizer import promptLLM
 
 # OpenAI API Key
 api_key = os.getenv("OPENAI_API_KEY_CIMPLE")
+open_models_url = os.getenv("OPEN_SOURCE_MODELS_URL")
 
 WH_MATCHES = ("why", "who", "which", "what", "where", "when", "how")
 
@@ -185,8 +186,10 @@ def main(args):
     end = len(df) if not args.end else args.end
     if args.model_provider == "openAI":
         llm = ChatOpenAI(temperature = 0.7, model = ENGINE, api_key = api_key, max_tokens = 1024, max_retries = MAX_GPT_CALLS)
-    elif args.model_provider == "Ollama":
-        llm = ChatOllama(base_url = "twdev.tplinkdns.com:11434", model = "llama3.2:3b", temperature = 0.7, num_predict = 1024)
+    elif args.model_provider == "llama":
+        llm = ChatOllama(base_url = open_models_url, model = "llama3.2:3b", temperature = 0.7, num_predict = 1024)
+    elif args.model_provider == "deepseek":
+        llm = ChatOllama(base_url = open_models_url, model = "deepseek-r1", temperature = 0.7, num_predict = 1024)
     start_time = time.time()
     run_start_time = time.time()
     for i in tqdm(range(start, end)):
@@ -215,7 +218,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_path', type=str, default=None)
     parser.add_argument('--output_path', type=str, default=None)
-    parser.add_argument('--model_provide', type=str, default="openAI", help="supported model providers: openAI, Ollama")
+    parser.add_argument('--model_provider', type=str, default="openAI", help="supported model providers: openAI, Ollama")
     parser.add_argument('--start', type=int, default=None)
     parser.add_argument('--end', type=int, default=None)
     parser.add_argument('--time_offset', type=int, default=1, help="add an offest to the time at which the claim was made")
