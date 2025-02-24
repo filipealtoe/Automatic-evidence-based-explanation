@@ -189,7 +189,7 @@ def main(args):
     elif args.model_provider == "llama":
         llm = ChatOllama(base_url = open_models_url, model = "llama3.2:3b", temperature = 0.7, num_predict = 1024)
     elif args.model_provider == "deepseek":
-        llm = ChatOllama(base_url = open_models_url, model = "deepseek-r1", temperature = 0.7, num_predict = 1024)
+        llm = ChatOllama(base_url = open_models_url, model = "deepseek-r1:latest", temperature = 0.7, num_predict = 1024)
     start_time = time.time()
     run_start_time = time.time()
     for i in tqdm(range(start, end)):
