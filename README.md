@@ -1,4 +1,4 @@
-# EFFORT: Explainable Framework for Fact-checking Oversight in Real-Time
+# Explainable Automatic Fact-Checking for Journalists Augmentation in the Wild
 
 ## Getting started
 Clone the repository and install the requirements:
@@ -50,7 +50,7 @@ decomposed_search_hit = {
 }
 ```
 
-## EFFORT Pipeline
+## Pipeline
 Each module below implements a step of EFFORT's pipeline and can be executed separately or as part of the complete workflow:
 
 ## Claim Decomp:
