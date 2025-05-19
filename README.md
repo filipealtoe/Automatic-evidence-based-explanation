@@ -1,8 +1,11 @@
-# Explainable Automatic Fact-Checking for Journalists Augmentation in the Wild
+# Explainable Automatic Fact-Checking for Journalists Augmentation in the Wild - EFFORT Pipeline
 
 This repository contains the data and the code described in the paper "Explainable Automatic Fact-Checking for Journalists Augmentation in the Wild" by Filipe Altoe, Sérgio Miguel Gonçalves Pinto , and H. Sofia Pinto, to appear in Proceedings of the 34th International Joint Conference on Artificial Intelligence (IJCAI 2025), Special Track on: Human-Centred Artificial Intelligence: Multidisciplinary Contours and Challenges of Next-Generation AI Research and Applications., 16-22 August, Montreal, Canada.
 
-AEBE is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. The software is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details. See http://www.gnu.org/licenses/.
+EFFORT is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. The software is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details. See http://www.gnu.org/licenses/.
+
+## Directory structure
+Once dowloaded the repositoty, you will find two all python modules used in the framework in the main folder. Each framework step is described in the pipeline section below.  The Python Notebooks used for the error analysis and user study results are contained in folders of the same name. The folder models include the Python Notebook used for intermediate data retrieving and wrangling. The catboost folder includes the implemented policy claim classifier data.
 
 ## Getting started
 Clone the repository and install the requirements:
@@ -222,3 +225,6 @@ The parametes below are "0" or "1" depending on the number of labels
 
 ## Error Analysis and User Study Data Analysis:
 A separate python notebook has been created to each one of the referred tasks. They are stored in corresponding directories of same name.
+
+## Contact
+For any inquiry about EFFORT, you can send an email to: filipe.altoe@gmail.com.
