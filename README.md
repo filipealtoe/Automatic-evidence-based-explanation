@@ -1,5 +1,9 @@
 # Explainable Automatic Fact-Checking for Journalists Augmentation in the Wild
 
+This repository contains the data and the code described in the paper "Explainable Automatic Fact-Checking for Journalists Augmentation in the Wild" by Filipe Altoe, Sérgio Miguel Gonçalves Pinto , and H. Sofia Pinto, to appear in Proceedings of the 34th International Joint Conference on Artificial Intelligence (IJCAI 2025), Special Track on: Human-Centred Artificial Intelligence: Multidisciplinary Contours and Challenges of Next-Generation AI Research and Applications., 16-22 August, Montreal, Canada.
+
+AEBE is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. The software is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details. See http://www.gnu.org/licenses/.
+
 ## Getting started
 Clone the repository and install the requirements:
 ```
